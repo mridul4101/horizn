@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 interface PublishButtonProps {
   carouselId: string
+  initialStatus?: string
+  initialMediaId?: string | null
   onPublished?: (mediaId: string) => void
 }
 
@@ -14,15 +16,22 @@ interface StepStatus {
   publish: StepState
 }
 
-export default function PublishButton({ carouselId, onPublished }: PublishButtonProps) {
+export default function PublishButton({
+  carouselId,
+  initialStatus,
+  initialMediaId,
+  onPublished,
+}: PublishButtonProps) {
   const [publishing, setPublishing] = useState(false)
-  const [publishedMediaId, setPublishedMediaId] = useState<string | null>(null)
+  const [publishedMediaId, setPublishedMediaId] = useState<string | null>(
+    initialStatus === 'published' ? initialMediaId || 'published' : null
+  )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [steps, setSteps] = useState<StepStatus>({
-    tunnel: 'waiting',
-    upload: 'waiting',
-    container: 'waiting',
-    publish: 'waiting',
+    tunnel: initialStatus === 'published' ? 'done' : 'waiting',
+    upload: initialStatus === 'published' ? 'done' : 'waiting',
+    container: initialStatus === 'published' ? 'done' : 'waiting',
+    publish: initialStatus === 'published' ? 'done' : 'waiting',
   })
 
   const startPublish = async () => {
@@ -37,13 +46,23 @@ export default function PublishButton({ carouselId, onPublished }: PublishButton
 
     try {
       const res = await fetch(`/api/publish/${carouselId}`, { method: 'POST' })
+      const resData = await res.json()
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Failed to start publish')
+        throw new Error(resData.detail || 'Failed to start publish')
       }
 
-      // Connect to SSE stream
-      const eventSource = new EventSource(`/api/publish/${carouselId}/status`)
+      if (resData.status === 'already_published') {
+        const mediaId = resData.ig_media_id || 'published'
+        setPublishedMediaId(mediaId)
+        setPublishing(false)
+        onPublished?.(mediaId)
+        return
+      }
+
+      const sinceId = resData.start_log_id || 0
+
+      // Connect to SSE stream starting from this run's log id
+      const eventSource = new EventSource(`/api/publish/${carouselId}/status?since_id=${sinceId}`)
 
       eventSource.onmessage = (event) => {
         try {

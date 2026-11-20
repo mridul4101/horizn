@@ -28,6 +28,8 @@ export default function Editor() {
   const [caption, setCaption] = useState('')
   const [hashtags, setHashtags] = useState<string[]>([])
   const [aspectRatio, setAspectRatio] = useState('4:5')
+  const [carouselStatus, setCarouselStatus] = useState<string>('draft')
+  const [igMediaId, setIgMediaId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -52,6 +54,8 @@ export default function Editor() {
         setCaption(data.caption || '')
         setHashtags(data.hashtags || [])
         setAspectRatio(data.aspect_ratio || '4:5')
+        setCarouselStatus(data.status || 'draft')
+        setIgMediaId(data.ig_media_id || null)
       }
     } catch (err) {
       console.error('Failed to load carousel', err)
@@ -229,7 +233,17 @@ export default function Editor() {
             <p className="section-hint">
               Publishes directly to your linked Instagram Creator/Business account via the Meta Graph API and an ephemeral tunnel.
             </p>
-            {id && <PublishButton carouselId={id} onPublished={() => navigate('/history')} />}
+            {id && (
+              <PublishButton
+                carouselId={id}
+                initialStatus={carouselStatus}
+                initialMediaId={igMediaId}
+                onPublished={(mediaId) => {
+                  setCarouselStatus('published')
+                  setIgMediaId(mediaId)
+                }}
+              />
+            )}
           </div>
         </div>
       </div>

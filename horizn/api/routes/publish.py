@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -27,6 +27,8 @@ class PublishResponse(BaseModel):
     job_id: str
     carousel_id: str
     status: str
+    ig_media_id: Optional[str] = None
+    start_log_id: int = 0
 
 
 async def _run_publish_task(job_id: str, carousel_id: str) -> None:
@@ -56,12 +58,29 @@ async def trigger_publish(
     background_tasks: BackgroundTasks,
 ) -> PublishResponse:
     """Trigger the publish pipeline for an approved carousel draft."""
-    # Check if carousel exists
+    # Check if carousel exists or is already published
     async with get_db() as conn:
-        async with conn.execute("SELECT id FROM carousels WHERE id = ?", (carousel_id,)) as cursor:
+        async with conn.execute(
+            "SELECT id, status, ig_media_id FROM carousels WHERE id = ?", (carousel_id,)
+        ) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail=f"Carousel {carousel_id} not found")
+            if row["status"] == "published":
+                return PublishResponse(
+                    job_id="already_published",
+                    carousel_id=carousel_id,
+                    status="already_published",
+                    ig_media_id=row["ig_media_id"],
+                    start_log_id=0,
+                )
+
+        async with conn.execute(
+            "SELECT COALESCE(MAX(id), 0) as max_id FROM publish_log WHERE carousel_id = ?",
+            (carousel_id,),
+        ) as cursor:
+            log_row = await cursor.fetchone()
+            start_log_id = log_row["max_id"] if log_row else 0
 
     job_id = str(uuid4())
     _publish_jobs[job_id] = {
@@ -71,15 +90,20 @@ async def trigger_publish(
         "events": [],
     }
     background_tasks.add_task(_run_publish_task, job_id, carousel_id)
-    return PublishResponse(job_id=job_id, carousel_id=carousel_id, status="started")
+    return PublishResponse(
+        job_id=job_id,
+        carousel_id=carousel_id,
+        status="started",
+        start_log_id=start_log_id,
+    )
 
 
 @router.get("/{carousel_id}/status")
-async def publish_status_stream(carousel_id: str) -> StreamingResponse:
+async def publish_status_stream(carousel_id: str, since_id: int = 0) -> StreamingResponse:
     """Stream live publish logs for a carousel using Server-Sent Events (SSE)."""
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        last_log_id = 0
+        last_log_id = since_id
         terminal_states = {"published", "failed"}
 
         while True:
