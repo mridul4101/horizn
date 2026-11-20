@@ -260,7 +260,7 @@ export default function Editor() {
                 className="modal-option-btn danger-option"
                 onClick={() => confirmRemoveSlide(removePhotoId, true)}
               >
-                <div className="option-headline">🗑️ Delete from Library Altogether</div>
+                <div className="option-headline">🗑️ Delete from Library</div>
                 <div className="option-subtext">
                   Permanently removes this photo from your library and all draft carousels.
                 </div>
