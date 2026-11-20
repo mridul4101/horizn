@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from horizn.api.routes import carousels, ingest, publish, static
+from horizn.api.routes import carousels, ingest, photos, publish, static
 from horizn.config import settings
 from horizn.database import init_db
 
@@ -48,6 +48,7 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
 app.include_router(carousels.router, prefix="/api/carousels", tags=["carousels"])
 app.include_router(carousels.router, prefix="/api", tags=["curation_alias"])  # allows /api/curate/run
 app.include_router(publish.router, prefix="/api/publish", tags=["publish"])

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Queue from './pages/Queue'
 import Editor from './pages/Editor'
 import History from './pages/History'
+import Library from './pages/Library'
 import './App.css'
 
 export default function App() {
@@ -18,6 +19,12 @@ export default function App() {
               Queue
             </NavLink>
             <NavLink
+              to="/library"
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              Library
+            </NavLink>
+            <NavLink
               to="/history"
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
             >
@@ -29,6 +36,7 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Queue />} />
+            <Route path="/library" element={<Library />} />
             <Route path="/editor/:id" element={<Editor />} />
             <Route path="/history" element={<History />} />
           </Routes>

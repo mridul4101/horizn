@@ -366,60 +366,137 @@
   border-color: var(--accent);
 }
 
-/* Phone Mockup Frame */
+/* iPhone 17 Pro Max Mockup Frame */
 .mockup-container {
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 .phone-frame {
-  width: 360px;
+  width: 420px;
+  min-height: 860px;
   background: #000;
-  border: 10px solid #282828;
-  border-radius: 46px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  border: 11px solid #1e1e20;
+  border-radius: 54px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), inset 0 0 2px rgba(255, 255, 255, 0.15), 0 0 0 1px #2f2f32;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
-.phone-notch {
-  width: 110px;
-  height: 22px;
-  background: #282828;
-  margin: 0 auto;
-  border-bottom-left-radius: 14px;
-  border-bottom-right-radius: 14px;
+.dynamic-island-container {
+  position: absolute;
+  top: 11px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: none;
+}
+.dynamic-island {
+  width: 118px;
+  height: 30px;
+  background: #000;
+  border-radius: 18px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 0 12px;
 }
-.notch-camera {
-  width: 8px;
-  height: 8px;
-  background: #111;
+.island-camera {
+  width: 10px;
+  height: 10px;
+  background: #141724;
+  border: 1px solid #202436;
   border-radius: 50%;
 }
+.island-sensor {
+  width: 7px;
+  height: 7px;
+  background: #0d0f17;
+  border-radius: 50%;
+}
+.phone-status-bar {
+  padding: 13px 24px 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  z-index: 5;
+}
+.status-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-cell {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.status-battery {
+  width: 20px;
+  height: 11px;
+}
 .phone-ig-header {
-  padding: 12px 14px;
+  padding: 8px 16px 10px;
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ig-avatar-ring {
+  padding: 2px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .ig-avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #E1306C, #FD1D1D);
+  background: #111;
+  border: 2px solid #000;
+}
+.ig-user-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .ig-username {
-  flex: 1;
+  font-weight: 600;
   color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.ig-location {
+  font-size: 10px;
+  color: #8e8e8e;
+  line-height: 1.2;
+}
+.ig-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ig-slide-counter {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   padding: 2px 7px;
   border-radius: 10px;
   font-size: 11px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+.ig-more-dots {
+  color: #888;
+  font-size: 13px;
+  letter-spacing: -1px;
 }
 
 .phone-image-area {
@@ -441,6 +518,32 @@
   font-size: 13px;
 }
 
+/* Small delete icon overlay on active photo */
+.photo-overlay-delete-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(18, 18, 18, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.photo-overlay-delete-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  transform: scale(1.1);
+}
+
 .nav-arrow {
   position: absolute;
   top: 50%;
@@ -456,15 +559,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 4;
 }
 .nav-left { left: 8px; }
 .nav-right { right: 8px; }
+
+.phone-ig-actions {
+  padding: 10px 16px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ig-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+}
+.ig-actions-right {
+  display: flex;
+  align-items: center;
+  color: #fff;
+}
 
 .phone-dots {
   display: flex;
   justify-content: center;
   gap: 5px;
-  padding: 10px 0 6px;
 }
 .dot {
   width: 6px;
@@ -472,20 +593,52 @@
   border-radius: 50%;
   background: #444;
   cursor: pointer;
+  transition: background 0.2s ease;
 }
 .dot.active {
   background: var(--accent);
 }
 
 .phone-caption-area {
-  padding: 10px 14px 20px;
+  padding: 6px 16px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 12px;
   line-height: 1.4;
-  color: #ddd;
+  color: #e0e0e0;
+}
+.phone-likes-count {
+  font-size: 12px;
+  color: #fff;
+  margin-bottom: 2px;
 }
 .phone-caption-text strong {
   color: #fff;
   margin-right: 6px;
+}
+.phone-hashtags-text {
+  color: #38bdf8;
+  font-size: 11px;
+}
+.phone-timestamp {
+  font-size: 9px;
+  color: #71717a;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.phone-home-indicator {
+  padding: 8px 0 10px;
+  display: flex;
+  justify-content: center;
+}
+.home-bar {
+  width: 135px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
 }
 
 /* Sortable Slide List */
@@ -820,4 +973,323 @@
   font-size: 15px;
   margin-top: 20px;
   box-shadow: 0 4px 16px rgba(225, 48, 108, 0.3);
+}
+
+/* Modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.modal-dialog {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+  animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.modal-desc {
+  font-size: 13px;
+  color: #a1a1aa;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.modal-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.modal-option-btn {
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #27272a;
+  background: #202024;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.modal-option-btn:hover {
+  border-color: #3f3f46;
+  background: #27272a;
+}
+.modal-option-btn.primary-option:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.modal-option-btn.danger-option {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.05);
+}
+.modal-option-btn.danger-option:hover {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+.option-headline {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.danger-option .option-headline {
+  color: #f87171;
+}
+.option-subtext {
+  font-size: 12px;
+  color: #a1a1aa;
+  line-height: 1.4;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Library View */
+.library-page {
+  padding-bottom: 80px;
+}
+.library-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.filter-pills {
+  display: flex;
+  gap: 8px;
+}
+.filter-pill {
+  background: #18181b;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-pill:hover {
+  background: #27272a;
+  color: #fff;
+}
+.filter-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.selection-quick-tools {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 18px;
+}
+.library-card {
+  background: #141416;
+  border: 1px solid #242428;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.library-card:hover {
+  transform: translateY(-2px);
+  border-color: #383842;
+}
+.library-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.library-thumb-wrap {
+  position: relative;
+  aspect-ratio: 4/5;
+  background: #09090b;
+  overflow: hidden;
+}
+.library-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.select-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  transition: all 0.15s;
+}
+.select-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.library-item-delete-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 3;
+}
+.library-card:hover .library-item-delete-btn {
+  opacity: 1;
+}
+.library-item-delete-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.library-badge-container {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  z-index: 2;
+}
+.badge-in-draft {
+  background: rgba(34, 197, 94, 0.9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
+.badge-awaiting {
+  background: rgba(234, 179, 8, 0.9);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
+
+.library-meta-info {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.meta-filename {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f4f4f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.meta-details-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #71717a;
+}
+
+/* Floating Action Bar */
+.floating-action-bar {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+  border-radius: 30px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 100;
+  animation: slideUpBar 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideUpBar {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.floating-selection-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.count-bubble {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+.floating-buttons-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
