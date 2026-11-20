@@ -302,7 +302,7 @@
 
 .editor-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 340px 1fr;
   gap: 36px;
   align-items: start;
 }
@@ -310,6 +310,13 @@
   .editor-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.editor-preview-col {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 0;
 }
 
 .panel-box {
@@ -366,11 +373,15 @@
   border-color: var(--accent);
 }
 
-/* iPhone 17 Pro Max Mockup Frame */
+/* iPhone 17 Pro Max Mockup Frame (Scaled to 80%) */
 .mockup-container {
   display: flex;
   justify-content: center;
-  width: 100%;
+  align-items: flex-start;
+  width: 336px;
+  height: 690px;
+  position: relative;
+  flex-shrink: 0;
 }
 .phone-frame {
   width: 420px;
@@ -380,7 +391,11 @@
   border-radius: 54px;
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), inset 0 0 2px rgba(255, 255, 255, 0.15), 0 0 0 1px #2f2f32;
   overflow: hidden;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  transform-origin: top center;
   display: flex;
   flex-direction: column;
 }

@@ -168,10 +168,10 @@ export default function Editor() {
       <div className="editor-grid">
         {/* Left column: Realistic Instagram Preview */}
         <div className="editor-preview-col">
-          <h2 className="section-title">Instagram Feed Preview</h2>
           <CarouselMockup
             slides={slides}
             caption={caption}
+            hashtags={hashtags}
             aspectRatio={aspectRatio}
             onRemoveSlide={handleRemoveSlide}
           />
