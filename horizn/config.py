@@ -1,8 +1,8 @@
 """Application settings loaded from the .env file via Pydantic BaseSettings."""
 
 from pathlib import Path
-from typing import Optional
-from pydantic import Field
+from typing import Any, Optional
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -64,13 +64,21 @@ class Settings(BaseSettings):
     # Gemini API
     gemini_api_key: str = Field(default="", description="Google Gemini API key.")
     gemini_flash_model: str = Field(
-        default="gemini-3.1-flash-lite",
-        description="Gemini model for fast sequencing.",
+        default="gemini-3.8-flash",
+        description="Gemini model for fast sequencing and visual clustering.",
     )
     gemini_pro_model: str = Field(
-        default="gemini-3.1-flash-lite",
+        default="gemini-3.8-flash",
         description="Gemini model for evocative captioning.",
     )
+
+    @field_validator("gemini_flash_model", "gemini_pro_model", mode="before")
+    @classmethod
+    def sanitize_gemini_models(cls, v: Any) -> str:
+        """Upgrade deprecated 2.5 models to current Gemini 3.8 Flash automatically."""
+        if not v or "2.5" in str(v) or "gemini-pro" == str(v):
+            return "gemini-3.8-flash"
+        return str(v)
 
     # Meta / Instagram Graph API
     meta_app_id: str = Field(default="", description="Meta Developer App ID.")
@@ -109,6 +117,8 @@ _SOURCE_ENV_KEYS = [
     "INGEST_START_DATE",
     "INGEST_END_DATE",
     "INGEST_BATCH_MONTHS",
+    "GEMINI_FLASH_MODEL",
+    "GEMINI_PRO_MODEL",
 ]
 
 
