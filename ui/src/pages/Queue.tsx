@@ -194,9 +194,15 @@ export default function Queue() {
         )
         fetchStats()
         setTimeout(() => setMessage(null), 3500)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setMessage(`⚠️ Failed to clear drafts: ${err.detail || 'Server error'}`)
+        setTimeout(() => setMessage(null), 4000)
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to clear drafts', err)
+      setMessage(`⚠️ Network error: ${err.message || 'Could not connect'}`)
+      setTimeout(() => setMessage(null), 4000)
     } finally {
       setShowClearModal(false)
     }

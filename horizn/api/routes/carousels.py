@@ -458,10 +458,15 @@ async def remove_slide(
 @router.delete("/drafts/all")
 async def clear_all_drafts(delete_from_library: bool = False) -> dict:
     """Delete all carousels that are currently in 'draft' status.
-    Optionally delete their underlying photos from the library."""
+    Optionally delete their underlying photos from the library and disk."""
     async with get_db() as conn:
         async with conn.execute("SELECT id FROM carousels WHERE status = 'draft'") as cursor:
             draft_ids = [row["id"] for row in await cursor.fetchall()]
+
+        if not draft_ids:
+            return {"status": "cleared", "deleted_count": 0}
+
+        photo_ids_to_delete: set[str] = set()
 
         for d_id in draft_ids:
             if delete_from_library:
@@ -470,11 +475,29 @@ async def clear_all_drafts(delete_from_library: bool = False) -> dict:
                 ) as p_cur:
                     p_rows = await p_cur.fetchall()
                     for pr in p_rows:
-                        await conn.execute("DELETE FROM photos WHERE id = ?", (pr["photo_id"],))
+                        photo_ids_to_delete.add(pr["photo_id"])
 
+            # Delete child references first to satisfy foreign key constraints
             await conn.execute("DELETE FROM carousel_slides WHERE carousel_id = ?", (d_id,))
             await conn.execute("DELETE FROM publish_log WHERE carousel_id = ?", (d_id,))
             await conn.execute("DELETE FROM carousels WHERE id = ?", (d_id,))
+
+        # Delete underlying photos after carousel_slides references have been removed
+        if delete_from_library and photo_ids_to_delete:
+            for p_id in photo_ids_to_delete:
+                async with conn.execute("SELECT export_path FROM photos WHERE id = ?", (p_id,)) as exp_cur:
+                    exp_row = await exp_cur.fetchone()
+                    if exp_row and exp_row["export_path"]:
+                        try:
+                            p = Path(exp_row["export_path"])
+                            if p.exists():
+                                p.unlink(missing_ok=True)
+                            ig_p = p.parent / f"{p.stem}_ig.jpg"
+                            if ig_p.exists():
+                                ig_p.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                await conn.execute("DELETE FROM photos WHERE id = ?", (p_id,))
 
         await conn.commit()
 
