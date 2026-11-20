@@ -192,6 +192,9 @@ async def create_manual_carousel(body: ManualCarouselRequest) -> CarouselDraft:
     else:
         sequenced = aligned
 
+    # Pause briefly to prevent rate limit bursting between sequencing and captioning
+    await asyncio.sleep(0.5)
+
     # 4. Generate caption & hashtags
     loc_hint = None
     if sequenced[0].get("lat") and sequenced[0].get("lon"):

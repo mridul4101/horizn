@@ -18,9 +18,17 @@ logger = logging.getLogger(__name__)
 _MAX_THUMB_PX = 512
 
 
+from pathlib import Path
+
+
 def _resize_to_bytes(path: str) -> bytes:
     """Open an image, resize so the longest side ≤ _MAX_THUMB_PX, return JPEG bytes."""
-    img = Image.open(path).convert("RGB")
+    p = Path(path)
+    if not p.exists():
+        alt = Path(settings.export_dir) / p.name
+        if alt.exists():
+            p = alt
+    img = Image.open(p).convert("RGB")
     w, h = img.size
     scale = _MAX_THUMB_PX / max(w, h)
     if scale < 1.0:
@@ -87,7 +95,8 @@ async def sequence_slides(photos: list[dict]) -> list[dict]:
                     types.Part.from_bytes(data=placeholder.getvalue(), mime_type="image/jpeg")
                 )
 
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=settings.gemini_flash_model,
             contents=[types.Content(role="user", parts=parts)],
         )

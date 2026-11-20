@@ -18,12 +18,19 @@ _FALLBACK_CAPTION = "Beautiful scenery."
 _FALLBACK_HASHTAGS = ["#travel", "#nature", "#landscape"]
 
 
+from pathlib import Path
+
 _MAX_CAPTION_IMG_PX = 768
 
 
 def _photo_to_jpeg_bytes(path: str) -> bytes:
     """Read an image from *path*, resize to max 768px for fast AI captioning, and return JPEG bytes."""
-    img = Image.open(path).convert("RGB")
+    p = Path(path)
+    if not p.exists():
+        alt = Path(settings.export_dir) / p.name
+        if alt.exists():
+            p = alt
+    img = Image.open(p).convert("RGB")
     w, h = img.size
     scale = _MAX_CAPTION_IMG_PX / max(w, h)
     if scale < 1.0:
@@ -144,19 +151,40 @@ async def generate_caption(
                     exc,
                 )
 
-        response = client.models.generate_content(
-            model=settings.gemini_pro_model,
-            contents=[types.Content(role="user", parts=parts)],
-        )
+        # Call Gemini with retry and exponential backoff
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                # Use Flash model as fallback on 3rd attempt if Pro is experiencing a demand spike
+                model_to_use = (
+                    settings.gemini_pro_model if attempt < 3 else settings.gemini_flash_model
+                )
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model_to_use,
+                    contents=[types.Content(role="user", parts=parts)],
+                )
 
-        caption, hashtags = _parse_response(response.text.strip())
+                raw_text = response.text.strip() if response.text else ""
+                caption, hashtags = _parse_response(raw_text)
 
-        if not caption:
-            caption = _FALLBACK_CAPTION
-        if not hashtags:
-            hashtags = _FALLBACK_HASHTAGS
+                if caption and caption != _FALLBACK_CAPTION:
+                    return caption, hashtags or _FALLBACK_HASHTAGS
 
-        return caption, hashtags
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Caption generation attempt %d failed (%s); retrying in %ss...",
+                    attempt,
+                    exc,
+                    attempt * 1.5,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(attempt * 1.5)
+
+        if last_error:
+            logger.warning("All caption generation attempts failed (%s); using fallback.", last_error)
+        return _FALLBACK_CAPTION, _FALLBACK_HASHTAGS
 
     except Exception as exc:
         logger.warning("Caption generation failed (%s); using fallback.", exc)
