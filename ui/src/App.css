@@ -1231,6 +1231,16 @@
   border-radius: 8px;
   backdrop-filter: blur(4px);
 }
+.badge-duplicate-library {
+  background: rgba(100, 116, 139, 0.85);
+  color: #f1f5f9;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
 
 .active-option {
   border-color: #6366f1 !important;

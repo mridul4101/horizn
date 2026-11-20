@@ -44,13 +44,14 @@ def _build_prompt(n: int) -> str:
         "scenery photos (provided in order 0 … N-1).\n\n"
         "Arrange them into the structure:\n"
         "  • Slide 0 – Hook: the single most striking, attention-grabbing image.\n"
-        "  • Slides 1 … N-2 – Body: images that develop the visual story / journey.\n"
+        "  • Slides 1 … N-2 – Body: images that develop the visual story / journey with visual variety and progression.\n"
         "  • Slide N-1 – Closer: a satisfying, contemplative conclusion.\n\n"
         "Return ONLY valid JSON with this exact schema (no markdown fence, no extra keys):\n"
         '{"order": [<index>, ...], "rationale": ["<one sentence per slide>", ...]}\n\n'
         "Rules:\n"
         "- 'order' must be a permutation of 0 … N-1 (each index exactly once).\n"
         "- 'rationale' must have the same length as 'order'.\n"
+        "- Ensure smooth narrative and visual contrast between adjacent slides (varying perspectives, focal lengths, and framing).\n"
         "- Do NOT wrap the JSON in a code fence."
     )
 

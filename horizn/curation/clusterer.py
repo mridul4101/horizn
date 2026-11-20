@@ -143,6 +143,7 @@ async def _cluster_batch_with_gemini(subgroup: list[dict], max_slides: int) -> l
             "Rules:\n"
             f"- Each carousel should have between 2 and {max_slides} photos (typically 3 to 7 photos).\n"
             f"- Each index 0..{n-1} should be in at most one carousel.\n"
+            "- CRITICAL DIVERSITY RULE: Within any single carousel, each photo MUST showcase a distinct viewpoint, composition, or subject. Never group two near-identical views of the exact same subject together.\n"
             "- Return ONLY valid JSON (no markdown fences) with format:\n"
             '{"carousels": [{"theme": "<theme description>", "indices": [0, 2, ...]}, ...]}'
         )

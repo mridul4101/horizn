@@ -13,13 +13,14 @@ interface PhotoItem {
   is_landscape: number
   ingested_at?: string
   carousel_id?: string
-  status: 'awaiting_curation' | 'in_carousel' | 'published' | 'excluded'
+  duplicate_of?: string
+  status: 'awaiting_curation' | 'in_carousel' | 'published' | 'duplicate' | 'excluded'
 }
 
 export default function Library() {
   const [photos, setPhotos] = useState<PhotoItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'awaiting' | 'in_carousel' | 'published'>('all')
+  const [filter, setFilter] = useState<'all' | 'awaiting' | 'in_carousel' | 'published' | 'duplicate'>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [creatingCarousel, setCreatingCarousel] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -48,6 +49,7 @@ export default function Library() {
     if (filter === 'awaiting') return p.status === 'awaiting_curation'
     if (filter === 'in_carousel') return p.status === 'in_carousel'
     if (filter === 'published') return p.status === 'published'
+    if (filter === 'duplicate') return p.status === 'duplicate'
     return true
   })
 
@@ -145,6 +147,7 @@ export default function Library() {
   const countAwaiting = photos.filter((p) => p.status === 'awaiting_curation').length
   const countInCarousel = photos.filter((p) => p.status === 'in_carousel').length
   const countPublished = photos.filter((p) => p.status === 'published').length
+  const countDuplicates = photos.filter((p) => p.status === 'duplicate').length
 
   return (
     <div className="library-page">
@@ -190,6 +193,12 @@ export default function Library() {
             onClick={() => setFilter('published')}
           >
             Published ({countPublished})
+          </button>
+          <button
+            className={`filter-pill ${filter === 'duplicate' ? 'active' : ''}`}
+            onClick={() => setFilter('duplicate')}
+          >
+            Alternate / Burst ({countDuplicates})
           </button>
         </div>
 
@@ -264,6 +273,10 @@ export default function Library() {
                       <span className="badge-published-library">✓ Published</span>
                     ) : photo.status === 'in_carousel' ? (
                       <span className="badge-in-draft">In Draft</span>
+                    ) : photo.status === 'duplicate' ? (
+                      <span className="badge-duplicate-library" title={`Alternate shot (Hero ID: ${photo.duplicate_of?.slice(0, 8)})`}>
+                        📷 Alternate
+                      </span>
                     ) : (
                       <span className="badge-awaiting">Awaiting Curation</span>
                     )}

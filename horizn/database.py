@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS photos (
   aspect_ratio TEXT,
   is_landscape BOOLEAN DEFAULT 0,
   export_path TEXT,
+  duplicate_of TEXT REFERENCES photos(id) ON DELETE SET NULL,
   ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -75,4 +76,11 @@ async def init_db() -> None:
         await conn.execute(_CREATE_CAROUSELS)
         await conn.execute(_CREATE_CAROUSEL_SLIDES)
         await conn.execute(_CREATE_PUBLISH_LOG)
+
+        # Migration: ensure duplicate_of column exists on existing databases
+        try:
+            await conn.execute("ALTER TABLE photos ADD COLUMN duplicate_of TEXT REFERENCES photos(id)")
+        except Exception:
+            pass
+
         await conn.commit()

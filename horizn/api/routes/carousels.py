@@ -44,13 +44,16 @@ async def run_curation(job_id: str) -> None:
     logger.info("Starting curation job %s...", job_id)
 
     try:
-        # Fetch eligible photos
+        # Fetch eligible photos: landscape scenery photos that are uncurated and not marked as duplicate
         async with get_db() as conn:
             async with conn.execute(
                 """
                 SELECT p.* FROM photos p
                 LEFT JOIN carousel_slides cs ON p.id = cs.photo_id
-                WHERE p.is_landscape = 1 AND cs.photo_id IS NULL AND p.export_path IS NOT NULL
+                WHERE p.is_landscape = 1 
+                  AND cs.photo_id IS NULL 
+                  AND p.export_path IS NOT NULL
+                  AND p.duplicate_of IS NULL
                 ORDER BY p.taken_at ASC
                 """
             ) as cursor:
@@ -58,16 +61,37 @@ async def run_curation(job_id: str) -> None:
                 photos = [dict(r) for r in rows]
 
         _curation_jobs[job_id]["photos_found"] = len(photos)
-        logger.info("Found %d uncurated scenery photos.", len(photos))
+        logger.info("Found %d uncurated candidate scenery photos.", len(photos))
 
         if not photos:
             _curation_jobs[job_id]["status"] = "completed"
             _curation_jobs[job_id]["carousels_created"] = 0
             return
 
-        # 1. Cluster photos with visual subject intelligence
-        clusters = await clusterer.cluster_photos(photos)
-        logger.info("Formed %d clusters from %d photos.", len(clusters), len(photos))
+        # 1. Global deduplication: group near-identical / burst photos across the session,
+        # pick the single sharpest 'Hero Shot' per scene, and map duplicate siblings.
+        heroes, duplicate_map = deduplicator.deduplicate_candidates(photos)
+        logger.info(
+            "Global deduplication: %d candidate photos reduced to %d hero shots (%d duplicates identified).",
+            len(photos),
+            len(heroes),
+            sum(len(dups) for dups in duplicate_map.values()),
+        )
+
+        # Record duplicate relationships in DB
+        if duplicate_map:
+            async with get_db() as conn:
+                for hero_id, dup_ids in duplicate_map.items():
+                    for dup_id in dup_ids:
+                        await conn.execute(
+                            "UPDATE photos SET duplicate_of = ? WHERE id = ?",
+                            (hero_id, dup_id),
+                        )
+                await conn.commit()
+
+        # 2. Cluster hero photos with visual subject intelligence
+        clusters = await clusterer.cluster_photos(heroes)
+        logger.info("Formed %d clusters from %d hero photos.", len(clusters), len(heroes))
         _curation_jobs[job_id]["total_clusters"] = len(clusters)
 
         carousels_created = 0
@@ -77,21 +101,21 @@ async def run_curation(job_id: str) -> None:
             if not raw_group:
                 continue
 
-            # 2. Deduplicate bursts
+            # 3. Intra-cluster burst deduplication safety net
             deduped = deduplicator.deduplicate_cluster(raw_group)
             if not deduped:
                 continue
 
-            # 3. Align aspect ratio
+            # 4. Align aspect ratio
             aligned = aspect_ratio.align_aspect_ratios(deduped, settings.export_dir)
 
-            # 4. Sequence slides (Gemini Flash)
+            # 5. Sequence slides (Gemini Flash)
             if len(aligned) > 1:
                 sequenced = await sequencer.sequence_slides(aligned)
             else:
                 sequenced = aligned
 
-            # 5. Generate caption & hashtags (Gemini Pro)
+            # 6. Generate caption & hashtags (Gemini Pro)
             loc_hint = None
             if sequenced[0].get("lat") and sequenced[0].get("lon"):
                 loc_hint = f"Coordinates: {sequenced[0]['lat']:.3f}, {sequenced[0]['lon']:.3f}"
@@ -101,7 +125,7 @@ async def run_curation(job_id: str) -> None:
             # Determine dominant aspect ratio
             maj_ratio = sequenced[0].get("aspect_ratio") or "4:5"
 
-            # 6. Save to database
+            # 7. Save to database
             c_id = str(uuid4())
             async with get_db() as conn:
                 await conn.execute(
@@ -421,6 +445,7 @@ async def remove_slide(
         )
 
         if delete_from_library:
+            await conn.execute("UPDATE photos SET duplicate_of = NULL WHERE duplicate_of = ?", (photo_id,))
             await conn.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
 
         # Re-index remaining positions
@@ -485,6 +510,7 @@ async def clear_all_drafts(delete_from_library: bool = False) -> dict:
         # Delete underlying photos after carousel_slides references have been removed
         if delete_from_library and photo_ids_to_delete:
             for p_id in photo_ids_to_delete:
+                await conn.execute("UPDATE photos SET duplicate_of = NULL WHERE duplicate_of = ?", (p_id,))
                 async with conn.execute("SELECT export_path FROM photos WHERE id = ?", (p_id,)) as exp_cur:
                     exp_row = await exp_cur.fetchone()
                     if exp_row and exp_row["export_path"]:
@@ -498,6 +524,16 @@ async def clear_all_drafts(delete_from_library: bool = False) -> dict:
                         except Exception:
                             pass
                 await conn.execute("DELETE FROM photos WHERE id = ?", (p_id,))
+        elif not delete_from_library:
+            # If drafts were cleared without deleting photos from library, release duplicate_of
+            # for photos whose hero was in that cleared draft, so they can be re-curated cleanly.
+            await conn.execute(
+                """
+                UPDATE photos SET duplicate_of = NULL 
+                WHERE id NOT IN (SELECT photo_id FROM carousel_slides)
+                  AND (duplicate_of IS NULL OR duplicate_of NOT IN (SELECT photo_id FROM carousel_slides))
+                """
+            )
 
         await conn.commit()
 
@@ -511,6 +547,16 @@ async def delete_carousel(carousel_id: str) -> dict:
         await conn.execute("DELETE FROM carousel_slides WHERE carousel_id = ?", (carousel_id,))
         await conn.execute("DELETE FROM publish_log WHERE carousel_id = ?", (carousel_id,))
         await conn.execute("DELETE FROM carousels WHERE id = ?", (carousel_id,))
+
+        # Release duplicate_of for photos whose hero was in this deleted draft and not in another carousel
+        await conn.execute(
+            """
+            UPDATE photos SET duplicate_of = NULL 
+            WHERE id NOT IN (SELECT photo_id FROM carousel_slides)
+              AND duplicate_of IS NOT NULL
+              AND duplicate_of NOT IN (SELECT photo_id FROM carousel_slides)
+            """
+        )
         await conn.commit()
 
     return {"status": "deleted", "id": carousel_id}
