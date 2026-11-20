@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
 import httpx
+from PIL import Image
 
 from horizn.config import settings
 from horizn.database import get_db
@@ -43,6 +44,41 @@ async def _log_event(
             await status_callback(event, detail)
         except Exception as exc:
             logger.warning("status_callback error: %s", exc)
+
+
+def _prepare_image_for_instagram(export_path: str) -> str:
+    """Pre-scale and optimize an image for Instagram publishing requirements.
+
+    Meta Graph API limitations:
+    - Max file size: 8 MB (strictly enforced)
+    - Max resolution: 1440px max dimension recommended
+    - Image format: JPEG sRGB
+
+    Returns the filename of the prepared JPEG located in settings.export_dir.
+    """
+    src_path = Path(export_path)
+    if not src_path.is_absolute():
+        src_path = settings.export_dir / src_path
+    if not src_path.exists():
+        src_path = settings.export_dir / src_path.name
+
+    out_name = f"{src_path.stem}_ig.jpg"
+    out_path = settings.export_dir / out_name
+
+    with Image.open(src_path) as img:
+        img = img.convert("RGB")
+        w, h = img.size
+        max_dim = max(w, h)
+        if max_dim > 1440:
+            scale = 1440.0 / max_dim
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(str(out_path), format="JPEG", quality=90, optimize=True)
+
+    return out_name
 
 
 async def publish_carousel(
@@ -116,7 +152,7 @@ async def publish_carousel(
             # If single photo post
             if len(slides) == 1:
                 slide = slides[0]
-                filename = Path(slide["export_path"]).name
+                filename = await asyncio.to_thread(_prepare_image_for_instagram, slide["export_path"])
                 img_url = f"{tunnel_url}/static/{filename}"
                 await _log_event(carousel_id, "upload", f"Uploading single image: {img_url}", status_callback)
 
@@ -140,7 +176,7 @@ async def publish_carousel(
                 # 2+ slides: Upload each carousel slide item
                 item_container_ids: list[str] = []
                 for idx, slide in enumerate(slides):
-                    filename = Path(slide["export_path"]).name
+                    filename = await asyncio.to_thread(_prepare_image_for_instagram, slide["export_path"])
                     img_url = f"{tunnel_url}/static/{filename}"
                     await _log_event(
                         carousel_id,

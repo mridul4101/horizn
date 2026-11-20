@@ -58,6 +58,8 @@ async def ephemeral_tunnel(local_url: str) -> AsyncGenerator[str, None]:
             match = re.search(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com", line)
             if match:
                 public_url = match.group(0)
+                # Allow Cloudflare edge routing and SSL propagation to settle
+                await asyncio.sleep(2.5)
                 break
 
         if not public_url:
