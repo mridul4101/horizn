@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+import shutil
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -26,8 +28,15 @@ async def ephemeral_tunnel(local_url: str) -> AsyncGenerator[str, None]:
         The temporary public HTTPS URL (e.g. "https://xxxx.trycloudflare.com").
     """
     logger.info("Spawning ephemeral cloudflared tunnel for %s...", local_url)
+    cloudflared_bin = (
+        shutil.which("cloudflared")
+        or ("/opt/homebrew/bin/cloudflared" if os.path.exists("/opt/homebrew/bin/cloudflared") else None)
+        or ("/usr/local/bin/cloudflared" if os.path.exists("/usr/local/bin/cloudflared") else None)
+        or "cloudflared"
+    )
+
     proc = await asyncio.create_subprocess_exec(
-        "cloudflared",
+        cloudflared_bin,
         "tunnel",
         "--url",
         local_url,
