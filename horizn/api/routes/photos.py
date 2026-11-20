@@ -26,7 +26,7 @@ class PhotoItem(BaseModel):
     is_landscape: int = 1
     ingested_at: Optional[str] = None
     carousel_id: Optional[str] = None
-    status: str = "awaiting_curation"  # awaiting_curation | in_carousel | excluded
+    status: str = "awaiting_curation"  # awaiting_curation | in_carousel | published | excluded
 
 
 class BatchDeleteRequest(BaseModel):
@@ -43,9 +43,12 @@ async def list_photos() -> List[PhotoItem]:
             SELECT 
                 p.id, p.filepath, p.export_path, p.taken_at, p.lat, p.lon, 
                 p.sharpness, p.aspect_ratio, p.is_landscape, p.ingested_at,
-                cs.carousel_id
+                MAX(CASE WHEN c.status = 'published' THEN 'published' WHEN c.status = 'draft' THEN 'draft' ELSE NULL END) as best_carousel_status,
+                MAX(cs.carousel_id) as carousel_id
             FROM photos p
             LEFT JOIN carousel_slides cs ON p.id = cs.photo_id
+            LEFT JOIN carousels c ON cs.carousel_id = c.id
+            GROUP BY p.id
             ORDER BY p.taken_at DESC, p.ingested_at DESC
             """
         ) as cursor:
@@ -54,8 +57,11 @@ async def list_photos() -> List[PhotoItem]:
     results: List[PhotoItem] = []
     for r in rows:
         row_dict = dict(r)
+        c_status = row_dict.get("best_carousel_status")
         c_id = row_dict.get("carousel_id")
-        if c_id:
+        if c_status == "published":
+            status = "published"
+        elif c_status == "draft" or c_id:
             status = "in_carousel"
         elif row_dict.get("is_landscape") == 1:
             status = "awaiting_curation"

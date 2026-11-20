@@ -13,13 +13,13 @@ interface PhotoItem {
   is_landscape: number
   ingested_at?: string
   carousel_id?: string
-  status: 'awaiting_curation' | 'in_carousel' | 'excluded'
+  status: 'awaiting_curation' | 'in_carousel' | 'published' | 'excluded'
 }
 
 export default function Library() {
   const [photos, setPhotos] = useState<PhotoItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'awaiting' | 'in_carousel'>('all')
+  const [filter, setFilter] = useState<'all' | 'awaiting' | 'in_carousel' | 'published'>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [creatingCarousel, setCreatingCarousel] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -47,6 +47,7 @@ export default function Library() {
   const filteredPhotos = photos.filter((p) => {
     if (filter === 'awaiting') return p.status === 'awaiting_curation'
     if (filter === 'in_carousel') return p.status === 'in_carousel'
+    if (filter === 'published') return p.status === 'published'
     return true
   })
 
@@ -143,6 +144,7 @@ export default function Library() {
 
   const countAwaiting = photos.filter((p) => p.status === 'awaiting_curation').length
   const countInCarousel = photos.filter((p) => p.status === 'in_carousel').length
+  const countPublished = photos.filter((p) => p.status === 'published').length
 
   return (
     <div className="library-page">
@@ -182,6 +184,12 @@ export default function Library() {
             onClick={() => setFilter('in_carousel')}
           >
             In Drafts ({countInCarousel})
+          </button>
+          <button
+            className={`filter-pill ${filter === 'published' ? 'active' : ''}`}
+            onClick={() => setFilter('published')}
+          >
+            Published ({countPublished})
           </button>
         </div>
 
@@ -252,7 +260,9 @@ export default function Library() {
 
                   {/* Status Badge */}
                   <div className="library-badge-container">
-                    {photo.status === 'in_carousel' ? (
+                    {photo.status === 'published' ? (
+                      <span className="badge-published-library">✓ Published</span>
+                    ) : photo.status === 'in_carousel' ? (
                       <span className="badge-in-draft">In Draft</span>
                     ) : (
                       <span className="badge-awaiting">Awaiting Curation</span>
