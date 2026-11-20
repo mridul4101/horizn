@@ -28,7 +28,15 @@ class Settings(BaseSettings):
     )
     ingest_batch_months: int = Field(
         default=12,
-        description="How many months back to scan during each ingestion run (when not using an album/folder).",
+        description="How many months back to scan during each ingestion run (when not using an album/folder). Set to 0 for all time.",
+    )
+    ingest_start_date: Optional[str] = Field(
+        default=None,
+        description="Optional fixed start date (YYYY-MM-DD) for library scans.",
+    )
+    ingest_end_date: Optional[str] = Field(
+        default=None,
+        description="Optional fixed end date (YYYY-MM-DD) for library scans.",
     )
 
     # Privacy Filter

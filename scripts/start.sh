@@ -13,13 +13,12 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-# Load .env to pick up API_HOST / API_PORT
+# Read API_HOST / API_PORT from .env safely without sourcing
 if [[ -f ".env" ]]; then
-    # Export only simple KEY=VALUE lines (ignore comments / blank lines)
-    set -o allexport
-    # shellcheck disable=SC1091
-    source .env
-    set +o allexport
+    _cfg_host=$(grep -E '^[[:space:]]*API_HOST=' .env | cut -d '=' -f2- | tr -d '"'\'' ' || true)
+    _cfg_port=$(grep -E '^[[:space:]]*API_PORT=' .env | cut -d '=' -f2- | tr -d '"'\'' ' || true)
+    [[ -n "${_cfg_host}" ]] && API_HOST="${_cfg_host}"
+    [[ -n "${_cfg_port}" ]] && API_PORT="${_cfg_port}"
 fi
 
 API_HOST="${API_HOST:-127.0.0.1}"
