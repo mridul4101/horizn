@@ -29,6 +29,7 @@ export default function Queue() {
   const [ingesting, setIngesting] = useState(false)
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [showClearModal, setShowClearModal] = useState(false)
   const navigate = useNavigate()
 
   const fetchStats = async () => {
@@ -178,24 +179,31 @@ export default function Queue() {
     }
   }
 
-  const handleClearAllDrafts = async () => {
-    if (
-      !confirm(
-        'Are you sure you want to delete ALL draft carousels in the queue? (Your synced photo library remains safe)'
-      )
-    )
-      return
+  const confirmClearDrafts = async (deleteFromLibrary: boolean) => {
     try {
-      const res = await fetch('/api/carousels/drafts/all', { method: 'DELETE' })
+      const res = await fetch(
+        `/api/carousels/drafts/all?delete_from_library=${deleteFromLibrary}`,
+        { method: 'DELETE' }
+      )
       if (res.ok) {
         setCarousels([])
-        setMessage('All draft carousels cleared.')
+        setMessage(
+          deleteFromLibrary
+            ? 'All drafts and underlying photos deleted from library.'
+            : 'All drafts cleared. Photos remain safe in library awaiting curation.'
+        )
         fetchStats()
-        setTimeout(() => setMessage(null), 3000)
+        setTimeout(() => setMessage(null), 3500)
       }
     } catch (err) {
       console.error('Failed to clear drafts', err)
+    } finally {
+      setShowClearModal(false)
     }
+  }
+
+  const handleClearAllDrafts = () => {
+    setShowClearModal(true)
   }
 
   return (
@@ -338,6 +346,52 @@ export default function Queue() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Clear All Drafts Modal */}
+      {showClearModal && (
+        <div className="modal-backdrop" onClick={() => setShowClearModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Clear All Drafts</h3>
+            <p className="modal-desc">
+              How would you like to clear the draft queue?
+            </p>
+
+            <div className="modal-options-list">
+              <button
+                type="button"
+                className="modal-option-btn primary-option"
+                onClick={() => confirmClearDrafts(false)}
+              >
+                <div className="option-headline">Clear Drafts Only (Keep Photos)</div>
+                <div className="option-subtext">
+                  Deletes all draft carousels but keeps all {stats.total_photos} photos safe in your library awaiting future curation.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className="modal-option-btn danger-option"
+                onClick={() => confirmClearDrafts(true)}
+              >
+                <div className="option-headline">🗑️ Clear Drafts & Delete Photos from Library</div>
+                <div className="option-subtext">
+                  Permanently deletes all draft carousels and removes all draft photos from the library.
+                </div>
+              </button>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowClearModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

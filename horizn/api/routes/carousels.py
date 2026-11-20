@@ -154,6 +154,79 @@ class UpdateCarouselRequest(BaseModel):
     )
 
 
+class ManualCarouselRequest(BaseModel):
+    photo_ids: List[str]
+
+
+@router.post("/manual", response_model=CarouselDraft)
+@router.post("/curate/manual", response_model=CarouselDraft)
+async def create_manual_carousel(body: ManualCarouselRequest) -> CarouselDraft:
+    """Create a new carousel draft from manually selected photos, with Gemini AI sequencing and captioning."""
+    if not body.photo_ids:
+        raise HTTPException(status_code=400, detail="At least 1 photo must be selected.")
+    if len(body.photo_ids) > 10:
+        raise HTTPException(status_code=400, detail="Instagram carousels support a maximum of 10 slides.")
+
+    # 1. Fetch the photos from DB
+    async with get_db() as conn:
+        placeholders = ",".join(["?"] * len(body.photo_ids))
+        async with conn.execute(
+            f"SELECT * FROM photos WHERE id IN ({placeholders})", body.photo_ids
+        ) as cursor:
+            rows = await cursor.fetchall()
+            raw_photos = [dict(r) for r in rows]
+
+    if not raw_photos:
+        raise HTTPException(status_code=404, detail="Selected photos not found in library.")
+
+    # Maintain selected order
+    id_to_photo = {p["id"]: p for p in raw_photos}
+    selected_photos = [id_to_photo[pid] for pid in body.photo_ids if pid in id_to_photo]
+
+    # 2. Align aspect ratios
+    aligned = aspect_ratio.align_aspect_ratios(selected_photos, settings.export_dir)
+
+    # 3. Sequence slides (Gemini Flash narrative order)
+    if len(aligned) > 1:
+        sequenced = await sequencer.sequence_slides(aligned)
+    else:
+        sequenced = aligned
+
+    # 4. Generate caption & hashtags
+    loc_hint = None
+    if sequenced[0].get("lat") and sequenced[0].get("lon"):
+        loc_hint = f"Coordinates: {sequenced[0]['lat']:.3f}, {sequenced[0]['lon']:.3f}"
+
+    caption, hashtags = await caption_gen.generate_caption(sequenced, location_hint=loc_hint)
+
+    # 5. Determine dominant aspect ratio
+    maj_ratio = sequenced[0].get("aspect_ratio") or "4:5"
+
+    # 6. Save new draft to DB
+    c_id = str(uuid4())
+    async with get_db() as conn:
+        await conn.execute(
+            """
+            INSERT INTO carousels (id, status, aspect_ratio, caption, hashtags)
+            VALUES (?, 'draft', ?, ?, ?)
+            """,
+            (c_id, maj_ratio, caption, json.dumps(hashtags)),
+        )
+
+        for pos, slide_photo in enumerate(sequenced):
+            await conn.execute(
+                """
+                INSERT INTO carousel_slides (carousel_id, photo_id, position, caption)
+                VALUES (?, ?, ?, NULL)
+                """,
+                (c_id, slide_photo["id"], pos),
+            )
+
+        await conn.commit()
+
+    return await get_carousel(c_id)
+
+
 @router.post("/curate/run", response_model=CurationRunResponse)
 async def trigger_curation(background_tasks: BackgroundTasks) -> CurationRunResponse:
     """Trigger the automated carousel clustering, sequencing, and caption generation."""
@@ -331,13 +404,21 @@ async def update_carousel(carousel_id: str, body: UpdateCarouselRequest) -> Caro
 
 
 @router.delete("/{carousel_id}/slides/{photo_id}", response_model=CarouselDraft)
-async def remove_slide(carousel_id: str, photo_id: str) -> CarouselDraft:
-    """Remove a slide from a carousel and re-index the remaining slide positions."""
+async def remove_slide(
+    carousel_id: str,
+    photo_id: str,
+    delete_from_library: bool = False,
+) -> CarouselDraft:
+    """Remove a slide from a carousel and re-index the remaining slide positions.
+    Optionally delete the photo from the library altogether."""
     async with get_db() as conn:
         await conn.execute(
             "DELETE FROM carousel_slides WHERE carousel_id = ? AND photo_id = ?",
             (carousel_id, photo_id),
         )
+
+        if delete_from_library:
+            await conn.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
 
         # Re-index remaining positions
         async with conn.execute(
@@ -345,6 +426,20 @@ async def remove_slide(carousel_id: str, photo_id: str) -> CarouselDraft:
             (carousel_id,),
         ) as cursor:
             remaining = await cursor.fetchall()
+
+        if not remaining:
+            # If all slides removed, delete draft carousel
+            await conn.execute("DELETE FROM publish_log WHERE carousel_id = ?", (carousel_id,))
+            await conn.execute("DELETE FROM carousels WHERE id = ?", (carousel_id,))
+            await conn.commit()
+            return CarouselDraft(
+                id=carousel_id,
+                status="deleted",
+                aspect_ratio="4:5",
+                caption="",
+                hashtags=[],
+                slides=[],
+            )
 
         for idx, row in enumerate(remaining):
             await conn.execute(
@@ -358,13 +453,22 @@ async def remove_slide(carousel_id: str, photo_id: str) -> CarouselDraft:
 
 
 @router.delete("/drafts/all")
-async def clear_all_drafts() -> dict:
-    """Delete all carousels that are currently in 'draft' status."""
+async def clear_all_drafts(delete_from_library: bool = False) -> dict:
+    """Delete all carousels that are currently in 'draft' status.
+    Optionally delete their underlying photos from the library."""
     async with get_db() as conn:
         async with conn.execute("SELECT id FROM carousels WHERE status = 'draft'") as cursor:
             draft_ids = [row["id"] for row in await cursor.fetchall()]
 
         for d_id in draft_ids:
+            if delete_from_library:
+                async with conn.execute(
+                    "SELECT photo_id FROM carousel_slides WHERE carousel_id = ?", (d_id,)
+                ) as p_cur:
+                    p_rows = await p_cur.fetchall()
+                    for pr in p_rows:
+                        await conn.execute("DELETE FROM photos WHERE id = ?", (pr["photo_id"],))
+
             await conn.execute("DELETE FROM carousel_slides WHERE carousel_id = ?", (d_id,))
             await conn.execute("DELETE FROM publish_log WHERE carousel_id = ?", (d_id,))
             await conn.execute("DELETE FROM carousels WHERE id = ?", (d_id,))

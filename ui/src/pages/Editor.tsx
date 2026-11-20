@@ -32,6 +32,8 @@ export default function Editor() {
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
 
+  const [removePhotoId, setRemovePhotoId] = useState<string | null>(null)
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -74,19 +76,29 @@ export default function Editor() {
     }
   }
 
-  const handleRemoveSlide = async (photoId: string) => {
+  const handleRemoveSlide = (photoId: string) => {
+    setRemovePhotoId(photoId)
+  }
+
+  const confirmRemoveSlide = async (photoId: string, deleteFromLibrary: boolean) => {
     if (!id) return
-    if (!confirm('Remove this slide from the carousel?')) return
     try {
-      const res = await fetch(`/api/carousels/${id}/slides/${photoId}`, {
-        method: 'DELETE',
-      })
+      const res = await fetch(
+        `/api/carousels/${id}/slides/${photoId}?delete_from_library=${deleteFromLibrary}`,
+        { method: 'DELETE' }
+      )
       if (res.ok) {
         const data = await res.json()
-        setSlides(data.slides || [])
+        if (data.status === 'deleted' || !data.slides || data.slides.length === 0) {
+          navigate('/')
+        } else {
+          setSlides(data.slides || [])
+        }
       }
     } catch (err) {
       console.error('Failed to remove slide', err)
+    } finally {
+      setRemovePhotoId(null)
     }
   }
 
@@ -221,6 +233,52 @@ export default function Editor() {
           </div>
         </div>
       </div>
+
+      {/* Remove Photo Options Modal */}
+      {removePhotoId && (
+        <div className="modal-backdrop" onClick={() => setRemovePhotoId(null)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Remove Photo</h3>
+            <p className="modal-desc">
+              Choose how you would like to remove this photo:
+            </p>
+
+            <div className="modal-options-list">
+              <button
+                type="button"
+                className="modal-option-btn primary-option"
+                onClick={() => confirmRemoveSlide(removePhotoId, false)}
+              >
+                <div className="option-headline">Remove from Carousel Only</div>
+                <div className="option-subtext">
+                  Keeps the photo in your library. It returns to "Awaiting Curation" and can be used in other carousels.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className="modal-option-btn danger-option"
+                onClick={() => confirmRemoveSlide(removePhotoId, true)}
+              >
+                <div className="option-headline">🗑️ Delete from Library Altogether</div>
+                <div className="option-subtext">
+                  Permanently removes this photo from your library and all draft carousels.
+                </div>
+              </button>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setRemovePhotoId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
