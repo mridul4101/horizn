@@ -13,16 +13,17 @@ export default function App() {
           <div className="nav-brand">Horizn</div>
           <nav className="nav-links">
             <NavLink
-              to="/"
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            >
-              Queue
-            </NavLink>
-            <NavLink
               to="/library"
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
             >
               Library
+            </NavLink>
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              Queue
             </NavLink>
             <NavLink
               to="/history"
@@ -36,6 +37,7 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Queue />} />
+            <Route path="/queue" element={<Queue />} />
             <Route path="/library" element={<Library />} />
             <Route path="/editor/:id" element={<Editor />} />
             <Route path="/history" element={<History />} />
