@@ -13,13 +13,41 @@ This guide walks you through every step needed to connect your Instagram account
 
 ---
 
-## 2. Connect a Facebook Page
+## 2. Connect a Facebook Page (Required by Meta Graph API)
 
-Meta's Graph API requires that your Instagram account is linked to a Facebook Page.
+Meta's Graph API requires that your Instagram Creator or Business account is linked to a **Facebook Page**. You do not need to use or post to this Facebook Page—it simply acts as an administrative anchor for Meta's API permissions.
 
-1. In Instagram settings, go to **Account → Linked accounts → Facebook**.
-2. Log in to Facebook and select (or create) a Page to link.
-3. Confirm the connection. Your Instagram and Facebook Page are now paired.
+You can do this either from your **Instagram phone app** (fastest) or on a **computer browser**:
+
+### Option A: From the Instagram App on Your Phone (Fastest - ~1 minute)
+
+1. Open **Instagram** and go to your **Profile**.
+2. Tap the **Edit profile** button below your bio.
+3. Scroll down to the **Public business information** section.
+4. Tap on **Page** (it will say *"Connect or create"*).
+5. Choose **Connect existing Page** OR **Create Facebook Page**:
+   - If you already have a personal Facebook account, log in when prompted.
+   - If you don't have a Facebook Page yet, tap **Create Facebook Page**, enter a title (e.g., `Your Name Photos`), choose a category (e.g., `Photographer`), and tap **Done**.
+   - Instagram will automatically link to your Facebook account and create/pair the Page in the background.
+6. Verify: Once completed, your Page name will appear under **Public business information → Page** in your Edit Profile screen.
+
+---
+
+### Option B: From Your Computer Browser (facebook.com)
+
+If you prefer doing it from your laptop or desktop:
+
+1. **Create a Facebook Page:**
+   - Log into Facebook on your browser and visit **[facebook.com/pages/create](https://facebook.com/pages/create)**.
+   - Enter a Page name (e.g. `My Landscape Studio`) and category (e.g. `Photographer`).
+   - Click **Create Page**.
+2. **Link Your Instagram Account:**
+   - In the left sidebar of your new Page, click **Settings**.
+   - Click **Linked Accounts** (in the left menu).
+   - Click **Instagram**, then click the blue **Connect Account** button.
+   - A login window will appear. Enter your Instagram Creator account username and password.
+   - Click **Confirm**.
+3. Your Instagram Creator account is now paired with your Facebook Page.
 
 ---
 
