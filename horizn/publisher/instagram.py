@@ -1,0 +1,241 @@
+"""Publishes carousel drafts or single posts to Instagram via the Meta Graph API."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Optional
+
+import httpx
+
+from horizn.config import settings
+from horizn.database import get_db
+from horizn.publisher.tunnel import ephemeral_tunnel
+
+logger = logging.getLogger(__name__)
+
+GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+
+
+async def _log_event(
+    carousel_id: str,
+    event: str,
+    detail: str,
+    status_callback: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
+) -> None:
+    """Record an audit log entry in the publish_log table and invoke the callback if given."""
+    logger.info("[%s] %s: %s", carousel_id, event, detail)
+    try:
+        async with get_db() as conn:
+            await conn.execute(
+                "INSERT INTO publish_log (carousel_id, event, detail) VALUES (?, ?, ?)",
+                (carousel_id, event, detail),
+            )
+            await conn.commit()
+    except Exception as exc:
+        logger.warning("Could not write to publish_log: %s", exc)
+
+    if status_callback:
+        try:
+            await status_callback(event, detail)
+        except Exception as exc:
+            logger.warning("status_callback error: %s", exc)
+
+
+async def publish_carousel(
+    carousel_id: str,
+    status_callback: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
+) -> str:
+    """Publish a carousel draft (or single photo) to Instagram using the Meta Graph API.
+
+    Steps:
+    1. Fetch carousel and ordered slides from SQLite.
+    2. Start an ephemeral cloudflared tunnel exposing local /static exports.
+    3. Upload each slide as an item container (or single post).
+    4. Create the carousel container (if > 1 slide).
+    5. Publish the container and poll until finished.
+    6. Update carousel record with ig_media_id, status='published', published_at.
+    """
+    await _log_event(carousel_id, "start", "Initiating publish sequence", status_callback)
+
+    # 1. Fetch carousel & slides
+    async with get_db() as conn:
+        async with conn.execute(
+            "SELECT * FROM carousels WHERE id = ?", (carousel_id,)
+        ) as cursor:
+            carousel = await cursor.fetchone()
+
+        if not carousel:
+            err = f"Carousel {carousel_id} not found"
+            await _log_event(carousel_id, "error", err, status_callback)
+            raise ValueError(err)
+
+        async with conn.execute(
+            """
+            SELECT cs.position, cs.caption as slide_caption, p.id as photo_id, p.export_path
+            FROM carousel_slides cs
+            JOIN photos p ON cs.photo_id = p.id
+            WHERE cs.carousel_id = ?
+            ORDER BY cs.position ASC
+            """,
+            (carousel_id,),
+        ) as cursor:
+            slides = [dict(row) for row in await cursor.fetchall()]
+
+    if not slides:
+        err = f"Carousel {carousel_id} has no slides"
+        await _log_event(carousel_id, "error", err, status_callback)
+        raise ValueError(err)
+
+    ig_user_id = settings.ig_user_id
+    access_token = settings.ig_access_token
+    if not ig_user_id or not access_token:
+        err = "Missing IG_USER_ID or IG_ACCESS_TOKEN in environment"
+        await _log_event(carousel_id, "error", err, status_callback)
+        raise ValueError(err)
+
+    # Prepare caption & hashtags
+    full_caption = carousel["caption"] or ""
+    if carousel["hashtags"]:
+        try:
+            tags = json.loads(carousel["hashtags"])
+            if tags:
+                full_caption += "\n\n" + " ".join(tags)
+        except Exception:
+            pass
+
+    local_url = f"http://127.0.0.1:{settings.api_port}"
+
+    async with ephemeral_tunnel(local_url) as tunnel_url:
+        await _log_event(carousel_id, "tunnel_ready", f"Public tunnel active: {tunnel_url}", status_callback)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # If single photo post
+            if len(slides) == 1:
+                slide = slides[0]
+                filename = Path(slide["export_path"]).name
+                img_url = f"{tunnel_url}/static/{filename}"
+                await _log_event(carousel_id, "upload", f"Uploading single image: {img_url}", status_callback)
+
+                res = await client.post(
+                    f"{GRAPH_API_BASE}/{ig_user_id}/media",
+                    params={
+                        "image_url": img_url,
+                        "caption": full_caption,
+                        "access_token": access_token,
+                    },
+                )
+                data = res.json()
+                if "id" not in data:
+                    err = f"Failed to create single photo container: {data}"
+                    await _log_event(carousel_id, "error", err, status_callback)
+                    raise RuntimeError(err)
+
+                container_id = data["id"]
+
+            else:
+                # 2+ slides: Upload each carousel slide item
+                item_container_ids: list[str] = []
+                for idx, slide in enumerate(slides):
+                    filename = Path(slide["export_path"]).name
+                    img_url = f"{tunnel_url}/static/{filename}"
+                    await _log_event(
+                        carousel_id,
+                        "upload_slide",
+                        f"Uploading slide {idx + 1}/{len(slides)}",
+                        status_callback,
+                    )
+
+                    res = await client.post(
+                        f"{GRAPH_API_BASE}/{ig_user_id}/media",
+                        params={
+                            "image_url": img_url,
+                            "is_carousel_item": "true",
+                            "access_token": access_token,
+                        },
+                    )
+                    data = res.json()
+                    if "id" not in data:
+                        err = f"Failed slide item {idx + 1}: {data}"
+                        await _log_event(carousel_id, "error", err, status_callback)
+                        raise RuntimeError(err)
+
+                    item_container_ids.append(data["id"])
+
+                # Create carousel container
+                await _log_event(
+                    carousel_id,
+                    "create_carousel",
+                    f"Creating carousel container with {len(item_container_ids)} items",
+                    status_callback,
+                )
+                res = await client.post(
+                    f"{GRAPH_API_BASE}/{ig_user_id}/media",
+                    params={
+                        "media_type": "CAROUSEL",
+                        "children": ",".join(item_container_ids),
+                        "caption": full_caption,
+                        "access_token": access_token,
+                    },
+                )
+                data = res.json()
+                if "id" not in data:
+                    err = f"Failed to create carousel container: {data}"
+                    await _log_event(carousel_id, "error", err, status_callback)
+                    raise RuntimeError(err)
+
+                container_id = data["id"]
+
+            # Poll container status until FINISHED
+            await _log_event(carousel_id, "processing", f"Polling container {container_id} status", status_callback)
+            for _ in range(12):
+                await asyncio.sleep(5)
+                stat_res = await client.get(
+                    f"{GRAPH_API_BASE}/{container_id}",
+                    params={"fields": "status_code,status", "access_token": access_token},
+                )
+                stat_data = stat_res.json()
+                code = stat_data.get("status_code", "").upper()
+                if code == "FINISHED":
+                    break
+                elif code == "ERROR":
+                    err = f"Container processing error: {stat_data}"
+                    await _log_event(carousel_id, "error", err, status_callback)
+                    raise RuntimeError(err)
+
+            # Publish container
+            await _log_event(carousel_id, "publishing", "Publishing container to Instagram feed", status_callback)
+            pub_res = await client.post(
+                f"{GRAPH_API_BASE}/{ig_user_id}/media_publish",
+                params={"creation_id": container_id, "access_token": access_token},
+            )
+            pub_data = pub_res.json()
+            if "id" not in pub_data:
+                err = f"Failed to publish media: {pub_data}"
+                await _log_event(carousel_id, "error", err, status_callback)
+                raise RuntimeError(err)
+
+            ig_media_id = pub_data["id"]
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            async with get_db() as conn:
+                await conn.execute(
+                    """
+                    UPDATE carousels
+                    SET status = 'published', ig_media_id = ?, published_at = ?
+                    WHERE id = ?
+                    """,
+                    (ig_media_id, now_iso, carousel_id),
+                )
+                await conn.commit()
+
+            await _log_event(
+                carousel_id,
+                "published",
+                f"Successfully published! Instagram Media ID: {ig_media_id}",
+                status_callback,
+            )
+            return ig_media_id

@@ -1,6 +1,14 @@
 .env
-__pycache__/
 .venv/
+__pycache__/
+*.pyc
+data/exports/
+data/horizn.db
+data/horizn.db-wal
+data/horizn.db-shm
+ui/node_modules/
+ui/dist/
+*.egg-info/
 *.jpg
 *.jpeg
 *.heic
