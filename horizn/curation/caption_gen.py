@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
+from pathlib import Path
 
 from google import genai
 from google.genai import types
@@ -16,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_CAPTION = "Beautiful scenery."
 _FALLBACK_HASHTAGS = ["#travel", "#nature", "#landscape"]
-
-
-from pathlib import Path
 
 _MAX_CAPTION_IMG_PX = 768
 
@@ -66,27 +65,29 @@ def _build_prompt(location_hint: str | None, theme_hint: str | None = None) -> s
 
 
 def _parse_response(text: str) -> tuple[str, list[str]]:
-    """
-    Parse the Gemini response into (caption, hashtags).
-
-    Expected format::
-
-        Evocative caption text here.
-        ---
-        HASHTAGS: #tag1 #tag2 ...
-    """
-    parts = text.split("---", maxsplit=1)
-    caption = parts[0].strip()
+    """Parse the Gemini response into (caption, hashtags) robustly handling dashes, fences, and newlines."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
+        cleaned = re.sub(r"\n?```$", "", cleaned)
+        cleaned = cleaned.strip()
 
     hashtags: list[str] = []
-    if len(parts) > 1:
-        rest = parts[1].strip()
-        for line in rest.splitlines():
-            if line.upper().startswith("HASHTAGS:"):
-                raw_tags = line.split(":", 1)[1].strip()
-                hashtags = [t for t in raw_tags.split() if t.startswith("#")]
-                break
+    caption_lines: list[str] = []
 
+    for line in cleaned.splitlines():
+        trimmed = line.strip()
+        if trimmed == "---":
+            continue
+        if trimmed.upper().startswith("HASHTAGS:"):
+            raw_tags = trimmed.split(":", 1)[1].strip()
+            hashtags.extend([t for t in raw_tags.split() if t.startswith("#")])
+        elif trimmed and all(w.startswith("#") for w in trimmed.split()):
+            hashtags.extend(trimmed.split())
+        else:
+            caption_lines.append(line)
+
+    caption = "\n".join(caption_lines).strip()
     return caption, hashtags
 
 
