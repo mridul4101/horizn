@@ -1231,6 +1231,42 @@
   border-radius: 8px;
   backdrop-filter: blur(4px);
 }
+
+.active-option {
+  border-color: #6366f1 !important;
+  background: rgba(99, 102, 241, 0.1) !important;
+}
+
+.custom-date-inputs {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px;
+  background: #18181b;
+  border-radius: 8px;
+  border: 1px solid #27272a;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.date-field label {
+  font-size: 0.8rem;
+  color: #a1a1aa;
+}
+
+.date-field input[type="date"] {
+  background: #09090b;
+  border: 1px solid #3f3f46;
+  color: #f4f4f5;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
 .badge-in-draft {
   background: rgba(59, 130, 246, 0.9);
   color: #fff;

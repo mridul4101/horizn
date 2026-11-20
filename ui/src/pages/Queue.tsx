@@ -30,6 +30,10 @@ export default function Queue() {
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [showClearModal, setShowClearModal] = useState(false)
+  const [showSyncModal, setShowSyncModal] = useState(false)
+  const [syncRangeType, setSyncRangeType] = useState<'12months' | 'all' | 'custom'>('12months')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
   const navigate = useNavigate()
 
   const fetchStats = async () => {
@@ -97,21 +101,38 @@ export default function Queue() {
     }
   }
 
-  const handleRunIngestion = async () => {
+  const startIngestionWithRange = async () => {
+    setShowSyncModal(false)
     try {
       setIngesting(true)
       setSyncStatusText('Starting library scan…')
-      const end = new Date()
-      const start = new Date()
-      start.setMonth(start.getMonth() - 12)
+
+      let payload: { batch_start?: string; batch_end?: string } = {}
+
+      if (syncRangeType === '12months') {
+        const end = new Date()
+        const start = new Date()
+        start.setMonth(start.getMonth() - 12)
+        payload = { batch_start: start.toISOString(), batch_end: end.toISOString() }
+      } else if (syncRangeType === 'all') {
+        payload = { batch_start: new Date(0).toISOString(), batch_end: new Date().toISOString() }
+      } else if (syncRangeType === 'custom') {
+        if (!customStartDate || !customEndDate) {
+          alert('Please select both start and end dates.')
+          setIngesting(false)
+          setSyncStatusText(null)
+          return
+        }
+        payload = {
+          batch_start: new Date(customStartDate).toISOString(),
+          batch_end: new Date(`${customEndDate}T23:59:59`).toISOString(),
+        }
+      }
 
       const res = await fetch('/api/ingest/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          batch_start: start.toISOString(),
-          batch_end: end.toISOString(),
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (res.ok) {
@@ -230,7 +251,7 @@ export default function Queue() {
               Clear All Drafts
             </button>
           )}
-          <button className="btn-secondary" onClick={handleRunIngestion} disabled={ingesting}>
+          <button className="btn-secondary" onClick={() => setShowSyncModal(true)} disabled={ingesting}>
             {ingesting ? 'Scanning…' : 'Sync Photos'}
           </button>
           <button className="btn-primary" onClick={handleRunCuration} disabled={curating}>
@@ -395,6 +416,85 @@ export default function Queue() {
                 onClick={() => setShowClearModal(false)}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Photos Range Modal */}
+      {showSyncModal && (
+        <div className="modal-backdrop" onClick={() => setShowSyncModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Sync Photos</h3>
+            <p className="modal-desc">
+              Choose which photos to scan through the privacy filter:
+            </p>
+
+            <div className="modal-options-list">
+              <button
+                type="button"
+                className={`modal-option-btn ${syncRangeType === '12months' ? 'active-option' : ''}`}
+                onClick={() => setSyncRangeType('12months')}
+              >
+                <div className="option-headline">📅 Last 12 Months (Default)</div>
+                <div className="option-subtext">Scans recent photos from the past 12 months up to today.</div>
+              </button>
+
+              <button
+                type="button"
+                className={`modal-option-btn ${syncRangeType === 'all' ? 'active-option' : ''}`}
+                onClick={() => setSyncRangeType('all')}
+              >
+                <div className="option-headline">🌍 All Time</div>
+                <div className="option-subtext">Scans every photo from the beginning of your library.</div>
+              </button>
+
+              <button
+                type="button"
+                className={`modal-option-btn ${syncRangeType === 'custom' ? 'active-option' : ''}`}
+                onClick={() => setSyncRangeType('custom')}
+              >
+                <div className="option-headline">📆 Custom Date Range</div>
+                <div className="option-subtext">Target a specific vacation or timeframe in the past.</div>
+              </button>
+
+              {syncRangeType === 'custom' && (
+                <div className="custom-date-inputs">
+                  <div className="date-field">
+                    <label>Start Date</label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="date-field">
+                    <label>End Date</label>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowSyncModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={startIngestionWithRange}
+              >
+                Start Sync
               </button>
             </div>
           </div>

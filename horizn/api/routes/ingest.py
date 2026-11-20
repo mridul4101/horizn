@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from horizn.config import settings
 from horizn.ingestion.reader import run_ingestion
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ _status_store: Dict[str, Dict[str, Any]] = {}
 
 
 class IngestRunRequest(BaseModel):
-    batch_start: str  # ISO 8601 date/datetime string
-    batch_end: str  # ISO 8601 date/datetime string
+    batch_start: Optional[str] = None  # ISO 8601 date/datetime string
+    batch_end: Optional[str] = None  # ISO 8601 date/datetime string
 
 
 class IngestRunResponse(BaseModel):
@@ -54,17 +55,44 @@ async def start_ingestion(
 ) -> IngestRunResponse:
     """Launch an ingestion job in the background.
 
-    Accepts ISO 8601 date strings for *batch_start* and *batch_end*.
+    Accepts optional ISO 8601 date strings for *batch_start* and *batch_end*.
+    If omitted, falls back to settings.ingest_start_date/ingest_end_date or
+    settings.ingest_batch_months (relative to now, 0 = all time).
     Returns a *job_id* that can be used to poll SSE status.
     """
-    try:
-        batch_start = datetime.fromisoformat(body.batch_start)
-        batch_end = datetime.fromisoformat(body.batch_end)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid date format: {exc}",
-        ) from exc
+    now = datetime.now()
+
+    # Determine start date
+    if body.batch_start:
+        try:
+            batch_start = datetime.fromisoformat(body.batch_start)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid batch_start: {exc}") from exc
+    elif settings.ingest_start_date:
+        try:
+            batch_start = datetime.fromisoformat(settings.ingest_start_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid INGEST_START_DATE in settings: {exc}") from exc
+    elif settings.ingest_batch_months > 0:
+        days = int(settings.ingest_batch_months * 30.4375)
+        batch_start = now - timedelta(days=days)
+    else:
+        # All-time scan (from beginning of epoch)
+        batch_start = datetime(1970, 1, 1)
+
+    # Determine end date
+    if body.batch_end:
+        try:
+            batch_end = datetime.fromisoformat(body.batch_end)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid batch_end: {exc}") from exc
+    elif settings.ingest_end_date:
+        try:
+            batch_end = datetime.fromisoformat(settings.ingest_end_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid INGEST_END_DATE in settings: {exc}") from exc
+    else:
+        batch_end = now
 
     if batch_start > batch_end:
         raise HTTPException(
