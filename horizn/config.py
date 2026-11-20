@@ -103,3 +103,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def reload_settings() -> Settings:
+    """Reload settings from .env dynamically at runtime."""
+    global settings
+    settings = Settings()
+    return settings

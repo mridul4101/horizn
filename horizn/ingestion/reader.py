@@ -12,7 +12,7 @@ from typing import Any, AsyncGenerator, Dict, Optional
 import aiosqlite
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from horizn.config import settings
+from horizn.config import reload_settings, settings
 from horizn.database import get_db
 from horizn.ingestion import converter, exif_extractor, privacy_filter
 
@@ -95,14 +95,16 @@ async def scan_library(
     2. Specific Apple Photos Album if `settings.photos_album_name` is set.
     3. Full Apple Photos library filtered by date range.
     """
-    if settings.local_photos_dir:
-        async for item in scan_local_directory(settings.local_photos_dir):
+    cfg = reload_settings()
+
+    if cfg.local_photos_dir:
+        async for item in scan_local_directory(cfg.local_photos_dir):
             yield item
         return
 
     import osxphotos  # macOS only
 
-    library_path = str(settings.photos_library_path.expanduser())
+    library_path = str(cfg.photos_library_path.expanduser())
     logger.info("Opening Photos library at %s", library_path)
 
     loop = asyncio.get_event_loop()
@@ -193,7 +195,8 @@ async def run_ingestion(
     }
 
     loop = asyncio.get_event_loop()
-    export_dir = Path(settings.export_dir).expanduser()
+    cfg = reload_settings()
+    export_dir = Path(cfg.export_dir).expanduser()
     export_dir.mkdir(parents=True, exist_ok=True)
 
     try:
