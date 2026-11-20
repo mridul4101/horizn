@@ -102,11 +102,30 @@ class Settings(BaseSettings):
     )
 
 
+_SOURCE_ENV_KEYS = [
+    "LOCAL_PHOTOS_DIR",
+    "PHOTOS_ALBUM_NAME",
+    "PHOTOS_LIBRARY_PATH",
+    "INGEST_START_DATE",
+    "INGEST_END_DATE",
+    "INGEST_BATCH_MONTHS",
+]
+
+
+def _clear_stale_env_overrides() -> None:
+    import os
+
+    for k in _SOURCE_ENV_KEYS:
+        os.environ.pop(k, None)
+
+
+_clear_stale_env_overrides()
 settings = Settings()
 
 
 def reload_settings() -> Settings:
     """Reload settings from .env dynamically at runtime."""
     global settings
+    _clear_stale_env_overrides()
     settings = Settings()
     return settings

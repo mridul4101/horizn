@@ -13,6 +13,9 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
+# Clear any stale terminal environment variables so .env is always authoritative
+unset LOCAL_PHOTOS_DIR PHOTOS_ALBUM_NAME PHOTOS_LIBRARY_PATH INGEST_START_DATE INGEST_END_DATE INGEST_BATCH_MONTHS 2>/dev/null || true
+
 # Read API_HOST / API_PORT from .env safely without sourcing
 if [[ -f ".env" ]]; then
     _cfg_host=$(grep -E '^[[:space:]]*API_HOST=' .env | cut -d '=' -f2- | tr -d '"'\'' ' || true)
