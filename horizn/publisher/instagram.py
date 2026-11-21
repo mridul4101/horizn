@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
 import httpx
+from dotenv import dotenv_values, load_dotenv, set_key
 from PIL import Image
 
 from horizn.config import Settings, settings
@@ -21,9 +23,32 @@ logger = logging.getLogger(__name__)
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
 
+def _get_fresh_credentials() -> tuple[str, str, str, str, int]:
+    """Read latest credentials directly from .env on disk, bypassing stale os.environ."""
+    env_path = Path(".env")
+    if env_path.exists():
+        try:
+            load_dotenv(dotenv_path=env_path, override=True)
+        except Exception as exc:
+            logger.warning("Could not reload .env: %s", exc)
+
+    env_vals = dotenv_values(".env") if env_path.exists() else {}
+    current_settings = Settings()
+
+    ig_user_id = str(env_vals.get("IG_USER_ID") or current_settings.ig_user_id or "").strip().strip("'\"")
+    ig_access_token = str(env_vals.get("IG_ACCESS_TOKEN") or current_settings.ig_access_token or "").strip().strip("'\"")
+    meta_app_id = str(env_vals.get("META_APP_ID") or current_settings.meta_app_id or "").strip().strip("'\"")
+    meta_app_secret = str(env_vals.get("META_APP_SECRET") or current_settings.meta_app_secret or "").strip().strip("'\"")
+    api_port = current_settings.api_port
+
+    return ig_user_id, ig_access_token, meta_app_id, meta_app_secret, api_port
+
+
 async def _ensure_long_lived_token(access_token: str, app_id: str | None, app_secret: str | None) -> str:
-    """Attempt to exchange a short-lived user token for a 60-day long-lived token."""
-    if not app_id or not app_secret or not access_token or len(access_token) > 300:
+    """Attempt to exchange a short-lived user token for a 60-day long-lived token.
+    If exchange succeeds, also persists the 60-day token back to .env so it survives.
+    """
+    if not app_id or not app_secret or not access_token:
         return access_token
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -39,8 +64,16 @@ async def _ensure_long_lived_token(access_token: str, app_id: str | None, app_se
             if resp.status_code == 200:
                 data = resp.json()
                 if "access_token" in data:
+                    new_token = data["access_token"]
                     logger.info("Successfully upgraded Instagram access token to 60-day long-lived token.")
-                    return data["access_token"]
+                    try:
+                        env_path = Path(".env")
+                        if env_path.exists():
+                            set_key(str(env_path), "IG_ACCESS_TOKEN", new_token)
+                            os.environ["IG_ACCESS_TOKEN"] = new_token
+                    except Exception as pe:
+                        logger.warning("Could not persist upgraded token to .env: %s", pe)
+                    return new_token
     except Exception as exc:
         logger.debug("Token exchange skipped: %s", exc)
     return access_token
@@ -151,10 +184,8 @@ async def publish_carousel(
         await _log_event(carousel_id, "error", err, status_callback)
         raise ValueError(err)
 
-    # Dynamically load latest settings from .env
-    current_settings = Settings()
-    ig_user_id = current_settings.ig_user_id
-    raw_token = current_settings.ig_access_token
+    # Dynamically load latest settings directly from .env (avoiding stale os.environ)
+    ig_user_id, raw_token, meta_app_id, meta_app_secret, api_port = _get_fresh_credentials()
     if not ig_user_id or not raw_token:
         err = "Missing IG_USER_ID or IG_ACCESS_TOKEN in environment"
         await _log_event(carousel_id, "error", err, status_callback)
@@ -163,8 +194,8 @@ async def publish_carousel(
     # Automatically upgrade to 60-day token if possible
     access_token = await _ensure_long_lived_token(
         raw_token,
-        current_settings.meta_app_id,
-        current_settings.meta_app_secret,
+        meta_app_id,
+        meta_app_secret,
     )
 
     # Prepare caption & hashtags
@@ -177,7 +208,7 @@ async def publish_carousel(
         except Exception:
             pass
 
-    local_url = f"http://127.0.0.1:{current_settings.api_port}"
+    local_url = f"http://127.0.0.1:{api_port}"
 
     async with ephemeral_tunnel(local_url) as tunnel_url:
         await _log_event(carousel_id, "tunnel_ready", f"Public tunnel active: {tunnel_url}", status_callback)
