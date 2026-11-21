@@ -94,6 +94,10 @@ async def trigger_publish(
             log_row = await cursor.fetchone()
             start_log_id = log_row["max_id"] if log_row else 0
 
+        # Reset carousel status to 'publishing' so prior failed runs don't prematurely terminate the SSE stream
+        await conn.execute("UPDATE carousels SET status = 'publishing' WHERE id = ?", (carousel_id,))
+        await conn.commit()
+
     job_id = str(uuid4())
     _publish_jobs[job_id] = {
         "job_id": job_id,
