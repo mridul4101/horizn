@@ -22,6 +22,7 @@ router = APIRouter()
 
 # In-memory curation job status store
 _curation_jobs: Dict[str, Dict[str, Any]] = {}
+_curation_lock = asyncio.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -31,132 +32,146 @@ _curation_jobs: Dict[str, Dict[str, Any]] = {}
 
 async def run_curation(job_id: str) -> None:
     """Full curation pipeline:
-    1. Query all is_landscape=1 photos not yet assigned to any carousel slide.
-    2. Cluster by GPS proximity and 48-hour time window.
-    3. For each cluster:
-       - Deduplicate bursts via pHash (keep sharpest).
+    1. Clear any prior un-published drafts so clean, deterministic carousels are generated.
+    2. Reset duplicate_of for un-published photos.
+    3. Globally deduplicate photos via multi-hash (pHash + dHash) and burst proximity.
+    4. Cluster Hero Shots by GPS proximity and visual subjects.
+    5. For each cluster:
+       - Double-check burst deduplication.
        - Align aspect ratio to majority with letterboxing.
        - Sequence slides via Gemini 2.5 Flash (Hook -> Body -> Closer).
        - Generate caption & hashtags via Gemini 2.5 Pro.
        - Save to carousels & carousel_slides tables.
     """
-    _curation_jobs[job_id]["status"] = "running"
-    logger.info("Starting curation job %s...", job_id)
+    async with _curation_lock:
+        _curation_jobs[job_id]["status"] = "running"
+        logger.info("Starting curation job %s...", job_id)
 
-    try:
-        # Fetch eligible photos: landscape scenery photos that are uncurated and not marked as duplicate
-        async with get_db() as conn:
-            async with conn.execute(
-                """
-                SELECT p.* FROM photos p
-                LEFT JOIN carousel_slides cs ON p.id = cs.photo_id
-                WHERE p.is_landscape = 1 
-                  AND cs.photo_id IS NULL 
-                  AND p.export_path IS NOT NULL
-                  AND p.duplicate_of IS NULL
-                ORDER BY p.taken_at ASC
-                """
-            ) as cursor:
-                rows = await cursor.fetchall()
-                photos = [dict(r) for r in rows]
-
-        _curation_jobs[job_id]["photos_found"] = len(photos)
-        logger.info("Found %d uncurated candidate scenery photos.", len(photos))
-
-        if not photos:
-            _curation_jobs[job_id]["status"] = "completed"
-            _curation_jobs[job_id]["carousels_created"] = 0
-            return
-
-        # 1. Global deduplication: group near-identical / burst photos across the session,
-        # pick the single sharpest 'Hero Shot' per scene, and map duplicate siblings.
-        heroes, duplicate_map = deduplicator.deduplicate_candidates(photos)
-        logger.info(
-            "Global deduplication: %d candidate photos reduced to %d hero shots (%d duplicates identified).",
-            len(photos),
-            len(heroes),
-            sum(len(dups) for dups in duplicate_map.values()),
-        )
-
-        # Record duplicate relationships in DB
-        if duplicate_map:
+        try:
+            # 1. Clean up any un-published drafts to guarantee no duplicate drafts or overlapping runs
             async with get_db() as conn:
-                for hero_id, dup_ids in duplicate_map.items():
-                    for dup_id in dup_ids:
-                        await conn.execute(
-                            "UPDATE photos SET duplicate_of = ? WHERE id = ?",
-                            (hero_id, dup_id),
-                        )
-                await conn.commit()
-
-        # 2. Cluster hero photos with visual subject intelligence
-        clusters = await clusterer.cluster_photos(heroes)
-        logger.info("Formed %d clusters from %d hero photos.", len(clusters), len(heroes))
-        _curation_jobs[job_id]["total_clusters"] = len(clusters)
-
-        carousels_created = 0
-
-        for idx, raw_group in enumerate(clusters):
-            _curation_jobs[job_id]["current_cluster"] = idx + 1
-            if not raw_group:
-                continue
-
-            # 3. Intra-cluster burst deduplication safety net
-            deduped = deduplicator.deduplicate_cluster(raw_group)
-            if not deduped:
-                continue
-
-            # 4. Align aspect ratio
-            aligned = aspect_ratio.align_aspect_ratios(deduped, settings.export_dir)
-
-            # 5. Sequence slides (Gemini Flash)
-            if len(aligned) > 1:
-                sequenced = await sequencer.sequence_slides(aligned)
-            else:
-                sequenced = aligned
-
-            # 6. Generate caption & hashtags (Gemini Pro)
-            loc_hint = None
-            if sequenced[0].get("lat") and sequenced[0].get("lon"):
-                loc_hint = f"Coordinates: {sequenced[0]['lat']:.3f}, {sequenced[0]['lon']:.3f}"
-
-            caption, hashtags = await caption_gen.generate_caption(sequenced, location_hint=loc_hint)
-
-            # Determine dominant aspect ratio
-            maj_ratio = sequenced[0].get("aspect_ratio") or "4:5"
-
-            # 7. Save to database
-            c_id = str(uuid4())
-            async with get_db() as conn:
+                await conn.execute("DELETE FROM carousel_slides WHERE carousel_id IN (SELECT id FROM carousels WHERE status = 'draft')")
+                await conn.execute("DELETE FROM publish_log WHERE carousel_id IN (SELECT id FROM carousels WHERE status = 'draft')")
+                await conn.execute("DELETE FROM carousels WHERE status = 'draft'")
                 await conn.execute(
                     """
-                    INSERT INTO carousels (id, status, aspect_ratio, caption, hashtags)
-                    VALUES (?, 'draft', ?, ?, ?)
-                    """,
-                    (c_id, maj_ratio, caption, json.dumps(hashtags)),
+                    UPDATE photos SET duplicate_of = NULL 
+                    WHERE id NOT IN (SELECT photo_id FROM carousel_slides)
+                    """
                 )
-
-                for pos, slide_photo in enumerate(sequenced):
-                    await conn.execute(
-                        """
-                        INSERT INTO carousel_slides (carousel_id, photo_id, position, caption)
-                        VALUES (?, ?, ?, NULL)
-                        """,
-                        (c_id, slide_photo["id"], pos),
-                    )
-
                 await conn.commit()
 
-            carousels_created += 1
-            _curation_jobs[job_id]["carousels_created"] = carousels_created
+                # Fetch eligible photos: landscape scenery photos that are uncurated
+                async with conn.execute(
+                    """
+                    SELECT p.* FROM photos p
+                    LEFT JOIN carousel_slides cs ON p.id = cs.photo_id
+                    WHERE p.is_landscape = 1 
+                      AND cs.photo_id IS NULL 
+                      AND p.export_path IS NOT NULL
+                    ORDER BY p.taken_at ASC
+                    """
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    photos = [dict(r) for r in rows]
 
-        _curation_jobs[job_id]["status"] = "completed"
-        logger.info("Curation job %s completed. Created %d carousels.", job_id, carousels_created)
+            _curation_jobs[job_id]["photos_found"] = len(photos)
+            logger.info("Found %d uncurated candidate scenery photos.", len(photos))
 
-    except Exception as exc:
-        logger.exception("Curation job %s failed: %s", job_id, exc)
-        _curation_jobs[job_id]["status"] = "failed"
-        _curation_jobs[job_id]["error"] = str(exc)
+            if not photos:
+                _curation_jobs[job_id]["status"] = "completed"
+                _curation_jobs[job_id]["carousels_created"] = 0
+                return
+
+            # 2. Global deduplication: group near-identical / burst photos across the session,
+            # pick the single sharpest 'Hero Shot' per scene, and map duplicate siblings.
+            heroes, duplicate_map = deduplicator.deduplicate_candidates(photos)
+            logger.info(
+                "Global deduplication: %d candidate photos reduced to %d hero shots (%d duplicates identified).",
+                len(photos),
+                len(heroes),
+                sum(len(dups) for dups in duplicate_map.values()),
+            )
+
+            # Record duplicate relationships in DB
+            if duplicate_map:
+                async with get_db() as conn:
+                    for hero_id, dup_ids in duplicate_map.items():
+                        for dup_id in dup_ids:
+                            await conn.execute(
+                                "UPDATE photos SET duplicate_of = ? WHERE id = ?",
+                                (hero_id, dup_id),
+                            )
+                    await conn.commit()
+
+            # 3. Cluster hero photos with visual subject intelligence
+            clusters = await clusterer.cluster_photos(heroes)
+            logger.info("Formed %d clusters from %d hero photos.", len(clusters), len(heroes))
+            _curation_jobs[job_id]["total_clusters"] = len(clusters)
+
+            carousels_created = 0
+
+            for idx, raw_group in enumerate(clusters):
+                _curation_jobs[job_id]["current_cluster"] = idx + 1
+                if not raw_group:
+                    continue
+
+                # 4. Intra-cluster burst deduplication safety net
+                deduped = deduplicator.deduplicate_cluster(raw_group)
+                if not deduped:
+                    continue
+
+                # 5. Align aspect ratio
+                aligned = aspect_ratio.align_aspect_ratios(deduped, settings.export_dir)
+
+                # 6. Sequence slides (Gemini Flash)
+                if len(aligned) > 1:
+                    sequenced = await sequencer.sequence_slides(aligned)
+                else:
+                    sequenced = aligned
+
+                # 7. Generate caption & hashtags (Gemini Pro)
+                loc_hint = None
+                if sequenced[0].get("lat") and sequenced[0].get("lon"):
+                    loc_hint = f"Coordinates: {sequenced[0]['lat']:.3f}, {sequenced[0]['lon']:.3f}"
+
+                caption, hashtags = await caption_gen.generate_caption(sequenced, location_hint=loc_hint)
+
+                # Determine dominant aspect ratio
+                maj_ratio = sequenced[0].get("aspect_ratio") or "4:5"
+
+                # 8. Save to database
+                c_id = str(uuid4())
+                async with get_db() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO carousels (id, status, aspect_ratio, caption, hashtags)
+                        VALUES (?, 'draft', ?, ?, ?)
+                        """,
+                        (c_id, maj_ratio, caption, json.dumps(hashtags)),
+                    )
+
+                    for pos, slide_photo in enumerate(sequenced):
+                        await conn.execute(
+                            """
+                            INSERT INTO carousel_slides (carousel_id, photo_id, position, caption)
+                            VALUES (?, ?, ?, NULL)
+                            """,
+                            (c_id, slide_photo["id"], pos),
+                        )
+
+                    await conn.commit()
+
+                carousels_created += 1
+                _curation_jobs[job_id]["carousels_created"] = carousels_created
+
+            _curation_jobs[job_id]["status"] = "completed"
+            logger.info("Curation job %s completed. Created %d carousels.", job_id, carousels_created)
+
+        except Exception as exc:
+            logger.exception("Curation job %s failed: %s", job_id, exc)
+            _curation_jobs[job_id]["status"] = "failed"
+            _curation_jobs[job_id]["error"] = str(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +272,11 @@ async def create_manual_carousel(body: ManualCarouselRequest) -> CarouselDraft:
 @router.post("/curate/run", response_model=CurationRunResponse)
 async def trigger_curation(background_tasks: BackgroundTasks) -> CurationRunResponse:
     """Trigger the automated carousel clustering, sequencing, and caption generation."""
+    if _curation_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="A curation job is already in progress. Please wait for it to complete.",
+        )
     job_id = str(uuid4())
     _curation_jobs[job_id] = {
         "job_id": job_id,

@@ -78,13 +78,16 @@ def _resolve_image_path(p: dict) -> Path | None:
 
 def deduplicate_candidates(
     photos: list[dict],
-    hamming_threshold: int = 8,
-    burst_threshold: int = 12,
-    burst_time_window_seconds: float = 900.0,
+    hamming_threshold: int = 10,
+    dhash_threshold: int = 10,
+    burst_threshold: int = 14,
+    burst_dhash_threshold: int = 12,
+    burst_time_window_seconds: float = 1800.0,
 ) -> tuple[list[dict], dict[str, list[str]]]:
     """Globally deduplicate uncurated candidate photos across a session.
 
-    Groups near-identical photos using perceptual hashing (pHash) and time proximity.
+    Groups near-identical photos using multi-hash analysis (pHash for frequency,
+    dHash for structural gradients) and time proximity.
     For each component:
     1. Selects the single sharpest photo as the 'Hero Shot'.
     2. Maps the remaining duplicate photo IDs to the Hero Shot:
@@ -95,11 +98,15 @@ def deduplicate_candidates(
     photos:
         List of photo dicts containing 'id', 'export_path', 'sharpness', and optionally 'taken_at'.
     hamming_threshold:
-        Maximum Hamming distance to consider photos near-identical regardless of time (default 8).
+        Maximum pHash Hamming distance to consider photos near-identical regardless of time (default 10).
+    dhash_threshold:
+        Maximum dHash distance to consider photos structurally identical regardless of time (default 10).
     burst_threshold:
-        Maximum Hamming distance to consider photos duplicates when taken within burst_time_window_seconds (default 12).
+        Maximum pHash Hamming distance when taken within burst_time_window_seconds (default 14).
+    burst_dhash_threshold:
+        Maximum dHash distance when taken within burst_time_window_seconds (default 12).
     burst_time_window_seconds:
-        Time window in seconds (default 900s = 15 minutes) for burst/bracketing matching.
+        Time window in seconds (default 1800s = 30 minutes) for burst/bracketing matching.
 
     Returns
     -------
@@ -109,37 +116,43 @@ def deduplicate_candidates(
     if not photos:
         return [], {}
 
-    hashes: list[imagehash.ImageHash | None] = []
+    phashes: list[imagehash.ImageHash | None] = []
+    dhashes: list[imagehash.ImageHash | None] = []
     dts: list[datetime | None] = []
     for p in photos:
         resolved = _resolve_image_path(p)
         if resolved:
             try:
                 img = Image.open(resolved)
-                hashes.append(imagehash.phash(img))
+                phashes.append(imagehash.phash(img))
+                dhashes.append(imagehash.dhash(img))
             except Exception:
-                hashes.append(None)
+                phashes.append(None)
+                dhashes.append(None)
         else:
-            hashes.append(None)
+            phashes.append(None)
+            dhashes.append(None)
         dts.append(_parse_time(p.get("taken_at")))
 
     n = len(photos)
     uf = _UnionFind(n)
 
     for i in range(n):
-        if hashes[i] is None:
+        if phashes[i] is None or dhashes[i] is None:
             continue
         for j in range(i + 1, n):
-            if hashes[j] is None:
+            if phashes[j] is None or dhashes[j] is None:
                 continue
-            dist = hashes[i] - hashes[j]
+            p_dist = phashes[i] - phashes[j]
+            d_dist = dhashes[i] - dhashes[j]
             is_match = False
-            if dist <= hamming_threshold:
+            if p_dist <= hamming_threshold or d_dist <= dhash_threshold:
                 is_match = True
-            elif dist <= burst_threshold and dts[i] and dts[j]:
+            elif dts[i] and dts[j]:
                 sec_diff = abs((dts[i] - dts[j]).total_seconds())
                 if sec_diff <= burst_time_window_seconds:
-                    is_match = True
+                    if p_dist <= burst_threshold or d_dist <= burst_dhash_threshold:
+                        is_match = True
 
             if is_match:
                 uf.union(i, j)
@@ -171,10 +184,10 @@ def deduplicate_candidates(
 
 def deduplicate_cluster(photos: list[dict]) -> list[dict]:
     """
-    Remove near-duplicate photos from a cluster using perceptual hashing.
+    Remove near-duplicate photos from a cluster using perceptual and difference hashing.
 
-    For each connected component in the similarity graph (edge when Hamming
-    distance ≤ 8), keep only the photo with the highest sharpness score.
+    For each connected component in the similarity graph (edge when pHash ≤ 10 or dHash ≤ 10),
+    keep only the photo with the highest sharpness score.
     Original order of survivors is preserved.
 
     Parameters
@@ -190,30 +203,34 @@ def deduplicate_cluster(photos: list[dict]) -> list[dict]:
     if not photos:
         return []
 
-    # Compute pHash for each photo; fall back gracefully on IO errors.
-    hashes: list[imagehash.ImageHash | None] = []
+    phashes: list[imagehash.ImageHash | None] = []
+    dhashes: list[imagehash.ImageHash | None] = []
     for p in photos:
         resolved = _resolve_image_path(p)
         if resolved:
             try:
                 img = Image.open(resolved)
-                hashes.append(imagehash.phash(img))
+                phashes.append(imagehash.phash(img))
+                dhashes.append(imagehash.dhash(img))
             except Exception:
-                hashes.append(None)
+                phashes.append(None)
+                dhashes.append(None)
         else:
-            hashes.append(None)
+            phashes.append(None)
+            dhashes.append(None)
 
     n = len(photos)
     uf = _UnionFind(n)
 
     for i in range(n):
-        if hashes[i] is None:
+        if phashes[i] is None or dhashes[i] is None:
             continue
         for j in range(i + 1, n):
-            if hashes[j] is None:
+            if phashes[j] is None or dhashes[j] is None:
                 continue
-            dist = hashes[i] - hashes[j]
-            if dist <= _HAMMING_THRESHOLD:
+            p_dist = phashes[i] - phashes[j]
+            d_dist = dhashes[i] - dhashes[j]
+            if p_dist <= 10 or d_dist <= 10:
                 uf.union(i, j)
 
     # Group indices by component root
