@@ -1241,6 +1241,15 @@
   backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
+.badge-hero-library {
+  background: rgba(234, 179, 8, 0.9);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
 
 .active-option {
   border-color: #6366f1 !important;

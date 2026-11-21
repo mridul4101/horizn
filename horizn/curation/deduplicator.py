@@ -78,40 +78,23 @@ def _resolve_image_path(p: dict) -> Path | None:
 
 def deduplicate_candidates(
     photos: list[dict],
-    hamming_threshold: int = 10,
-    dhash_threshold: int = 10,
-    burst_threshold: int = 14,
-    burst_dhash_threshold: int = 12,
+    hamming_threshold: int = 6,
+    dhash_threshold: int = 8,
+    burst_threshold: int = 12,
+    burst_dhash_threshold: int = 10,
     burst_time_window_seconds: float = 1800.0,
+    max_session_gap_seconds: float = 7200.0,
 ) -> tuple[list[dict], dict[str, list[str]]]:
     """Globally deduplicate uncurated candidate photos across a session.
 
     Groups near-identical photos using multi-hash analysis (pHash for frequency,
-    dHash for structural gradients) and time proximity.
+    dHash for structural gradients) and session/burst time proximity.
+    Prevents cross-session transitive chaining across different days or months.
+
     For each component:
     1. Selects the single sharpest photo as the 'Hero Shot'.
     2. Maps the remaining duplicate photo IDs to the Hero Shot:
        { hero_id: [duplicate_id1, duplicate_id2, ...] }
-
-    Parameters
-    ----------
-    photos:
-        List of photo dicts containing 'id', 'export_path', 'sharpness', and optionally 'taken_at'.
-    hamming_threshold:
-        Maximum pHash Hamming distance to consider photos near-identical regardless of time (default 10).
-    dhash_threshold:
-        Maximum dHash distance to consider photos structurally identical regardless of time (default 10).
-    burst_threshold:
-        Maximum pHash Hamming distance when taken within burst_time_window_seconds (default 14).
-    burst_dhash_threshold:
-        Maximum dHash distance when taken within burst_time_window_seconds (default 12).
-    burst_time_window_seconds:
-        Time window in seconds (default 1800s = 30 minutes) for burst/bracketing matching.
-
-    Returns
-    -------
-    tuple[list[dict], dict[str, list[str]]]:
-        (hero_photos, duplicate_map)
     """
     if not photos:
         return [], {}
@@ -145,12 +128,22 @@ def deduplicate_candidates(
                 continue
             p_dist = phashes[i] - phashes[j]
             d_dist = dhashes[i] - dhashes[j]
-            is_match = False
-            if p_dist <= hamming_threshold or d_dist <= dhash_threshold:
-                is_match = True
-            elif dts[i] and dts[j]:
+
+            # 1. Time proximity guard: if timestamps exist, photos must be from the same shooting session (<= 2 hours)
+            time_ok = True
+            sec_diff = None
+            if dts[i] and dts[j]:
                 sec_diff = abs((dts[i] - dts[j]).total_seconds())
-                if sec_diff <= burst_time_window_seconds:
+                if sec_diff > max_session_gap_seconds:
+                    time_ok = False
+
+            is_match = False
+            if time_ok:
+                # Nearly identical hashes within the same session
+                if p_dist <= hamming_threshold or d_dist <= dhash_threshold:
+                    is_match = True
+                elif sec_diff is not None and sec_diff <= burst_time_window_seconds:
+                    # Burst / bracket exposure window (30 mins)
                     if p_dist <= burst_threshold or d_dist <= burst_dhash_threshold:
                         is_match = True
 

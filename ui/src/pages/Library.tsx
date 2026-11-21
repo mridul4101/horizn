@@ -14,6 +14,7 @@ interface PhotoItem {
   ingested_at?: string
   carousel_id?: string
   duplicate_of?: string
+  alternate_count?: number
   status: 'awaiting_curation' | 'in_carousel' | 'published' | 'duplicate' | 'excluded'
 }
 
@@ -272,10 +273,16 @@ export default function Library() {
                     {photo.status === 'published' ? (
                       <span className="badge-published-library">✓ Published</span>
                     ) : photo.status === 'in_carousel' ? (
-                      <span className="badge-in-draft">In Draft</span>
+                      <span className="badge-in-draft">
+                        {photo.alternate_count && photo.alternate_count > 0 ? `★ Hero (${photo.alternate_count} alt${photo.alternate_count > 1 ? 's' : ''})` : 'In Draft'}
+                      </span>
                     ) : photo.status === 'duplicate' ? (
                       <span className="badge-duplicate-library" title={`Alternate shot (Hero ID: ${photo.duplicate_of?.slice(0, 8)})`}>
                         📷 Alternate
+                      </span>
+                    ) : photo.alternate_count && photo.alternate_count > 0 ? (
+                      <span className="badge-hero-library" title={`Hero shot representing ${photo.alternate_count} alternate shots`}>
+                        ★ Hero ({photo.alternate_count} alt{photo.alternate_count > 1 ? 's' : ''})
                       </span>
                     ) : (
                       <span className="badge-awaiting">Awaiting Curation</span>

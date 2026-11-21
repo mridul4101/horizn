@@ -27,6 +27,7 @@ class PhotoItem(BaseModel):
     ingested_at: Optional[str] = None
     carousel_id: Optional[str] = None
     duplicate_of: Optional[str] = None
+    alternate_count: int = 0
     status: str = "awaiting_curation"  # awaiting_curation | in_carousel | published | duplicate | excluded
 
 
@@ -44,6 +45,7 @@ async def list_photos() -> List[PhotoItem]:
             SELECT 
                 p.id, p.filepath, p.export_path, p.taken_at, p.lat, p.lon, 
                 p.sharpness, p.aspect_ratio, p.is_landscape, p.ingested_at, p.duplicate_of,
+                (SELECT COUNT(*) FROM photos WHERE duplicate_of = p.id) as alternate_count,
                 MAX(CASE WHEN c.status = 'published' THEN 'published' WHEN c.status = 'draft' THEN 'draft' ELSE NULL END) as best_carousel_status,
                 MAX(cs.carousel_id) as carousel_id
             FROM photos p
@@ -86,6 +88,7 @@ async def list_photos() -> List[PhotoItem]:
                 ingested_at=str(row_dict["ingested_at"]) if row_dict.get("ingested_at") else None,
                 carousel_id=c_id,
                 duplicate_of=dup_of,
+                alternate_count=row_dict.get("alternate_count") or 0,
                 status=status,
             )
         )
