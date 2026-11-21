@@ -12,13 +12,38 @@ from typing import Any, Callable, Coroutine, Optional
 import httpx
 from PIL import Image
 
-from horizn.config import settings
+from horizn.config import Settings, settings
 from horizn.database import get_db
 from horizn.publisher.tunnel import ephemeral_tunnel
 
 logger = logging.getLogger(__name__)
 
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+
+
+async def _ensure_long_lived_token(access_token: str, app_id: str | None, app_secret: str | None) -> str:
+    """Attempt to exchange a short-lived user token for a 60-day long-lived token."""
+    if not app_id or not app_secret or not access_token or len(access_token) > 300:
+        return access_token
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{GRAPH_API_BASE}/oauth/access_token",
+                params={
+                    "grant_type": "fb_exchange_token",
+                    "client_id": app_id,
+                    "client_secret": app_secret,
+                    "fb_exchange_token": access_token,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if "access_token" in data:
+                    logger.info("Successfully upgraded Instagram access token to 60-day long-lived token.")
+                    return data["access_token"]
+    except Exception as exc:
+        logger.debug("Token exchange skipped: %s", exc)
+    return access_token
 
 
 async def _log_event(
@@ -126,12 +151,21 @@ async def publish_carousel(
         await _log_event(carousel_id, "error", err, status_callback)
         raise ValueError(err)
 
-    ig_user_id = settings.ig_user_id
-    access_token = settings.ig_access_token
-    if not ig_user_id or not access_token:
+    # Dynamically load latest settings from .env
+    current_settings = Settings()
+    ig_user_id = current_settings.ig_user_id
+    raw_token = current_settings.ig_access_token
+    if not ig_user_id or not raw_token:
         err = "Missing IG_USER_ID or IG_ACCESS_TOKEN in environment"
         await _log_event(carousel_id, "error", err, status_callback)
         raise ValueError(err)
+
+    # Automatically upgrade to 60-day token if possible
+    access_token = await _ensure_long_lived_token(
+        raw_token,
+        current_settings.meta_app_id,
+        current_settings.meta_app_secret,
+    )
 
     # Prepare caption & hashtags
     full_caption = carousel["caption"] or ""
@@ -143,7 +177,7 @@ async def publish_carousel(
         except Exception:
             pass
 
-    local_url = f"http://127.0.0.1:{settings.api_port}"
+    local_url = f"http://127.0.0.1:{current_settings.api_port}"
 
     async with ephemeral_tunnel(local_url) as tunnel_url:
         await _log_event(carousel_id, "tunnel_ready", f"Public tunnel active: {tunnel_url}", status_callback)

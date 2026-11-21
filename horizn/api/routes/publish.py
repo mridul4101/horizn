@@ -51,6 +51,18 @@ async def _run_publish_task(job_id: str, carousel_id: str) -> None:
         _publish_jobs[job_id]["status"] = "failed"
         _publish_jobs[job_id]["error"] = str(exc)
 
+        # Record error in DB so SSE stream and UI immediately receive the failure
+        try:
+            async with get_db() as conn:
+                await conn.execute("UPDATE carousels SET status = 'failed' WHERE id = ?", (carousel_id,))
+                await conn.execute(
+                    "INSERT INTO publish_log (carousel_id, event, detail) VALUES (?, 'error', ?)",
+                    (carousel_id, str(exc)),
+                )
+                await conn.commit()
+        except Exception as db_exc:
+            logger.warning("Could not record publish error in DB: %s", db_exc)
+
 
 @router.post("/{carousel_id}", response_model=PublishResponse)
 async def trigger_publish(
