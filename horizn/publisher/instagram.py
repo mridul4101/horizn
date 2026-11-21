@@ -314,12 +314,41 @@ async def publish_carousel(
                 params={"creation_id": container_id, "access_token": access_token},
             )
             pub_data = pub_res.json()
-            if "id" not in pub_data:
+            ig_media_id = pub_data.get("id")
+
+            if not ig_media_id:
+                # Meta occasionally publishes the post successfully but returns an anti-spam or velocity warning
+                # (e.g. error code 4, error_subcode 2207051 'action is blocked') on the response.
+                # Verify by checking the account's most recent media items.
+                logger.warning("media_publish returned error %s; checking if media was actually published...", pub_data)
+                try:
+                    await asyncio.sleep(2.0)
+                    recent_res = await client.get(
+                        f"{GRAPH_API_BASE}/{ig_user_id}/media",
+                        params={"fields": "id,caption", "access_token": access_token, "limit": 3},
+                    )
+                    if recent_res.status_code == 200:
+                        recent_data = recent_res.json().get("data", [])
+                        for item in recent_data:
+                            # Match against the caption text
+                            item_cap = (item.get("caption") or "").strip()
+                            clean_cap = full_caption.strip()
+                            if item_cap and clean_cap and (
+                                clean_cap[:40] in item_cap or item_cap[:40] in clean_cap
+                            ):
+                                ig_media_id = item["id"]
+                                logger.info(
+                                    "Verified post was actually published despite Meta warning! ig_media_id: %s",
+                                    ig_media_id,
+                                )
+                                break
+                except Exception as check_exc:
+                    logger.warning("Could not verify recent media: %s", check_exc)
+
+            if not ig_media_id:
                 err = f"Failed to publish media: {pub_data}"
                 await _log_event(carousel_id, "error", err, status_callback)
                 raise RuntimeError(err)
-
-            ig_media_id = pub_data["id"]
             now_iso = datetime.now(timezone.utc).isoformat()
 
             async with get_db() as conn:
