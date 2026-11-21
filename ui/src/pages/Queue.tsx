@@ -14,6 +14,7 @@ interface CarouselItem {
 interface IngestStats {
   total_photos: number
   uncurated_photos: number
+  alternate_photos?: number
   draft_carousels: number
 }
 
@@ -22,6 +23,7 @@ export default function Queue() {
   const [stats, setStats] = useState<IngestStats>({
     total_photos: 0,
     uncurated_photos: 0,
+    alternate_photos: 0,
     draft_carousels: 0,
   })
   const [loading, setLoading] = useState(true)
@@ -270,6 +272,15 @@ export default function Queue() {
           <span className="stat-num">{stats.uncurated_photos}</span>
           <span className="stat-label">Awaiting Curation</span>
         </div>
+        {(stats.alternate_photos ?? 0) > 0 && (
+          <div
+            className="stat-item"
+            title="Burst and alternate shots grouped with hero photos. Preserved in library, excluded from automated carousels."
+          >
+            <span className="stat-num">{stats.alternate_photos}</span>
+            <span className="stat-label">Alternates / Bursts</span>
+          </div>
+        )}
         <div className="stat-item">
           <span className="stat-num">{carousels.length}</span>
           <span className="stat-label">Draft Carousels</span>

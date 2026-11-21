@@ -152,13 +152,13 @@ async def generate_caption(
                     exc,
                 )
 
-        # Call Gemini with retry and exponential backoff
+        # Call Gemini with retry and adaptive backoff for rate limits
         last_error = None
-        for attempt in range(1, 4):
+        for attempt in range(1, 5):
             try:
-                # Use Flash model as fallback on 3rd attempt if Pro is experiencing a demand spike
+                # Use Flash model on attempts >= 2 if Pro is experiencing a rate limit or demand spike
                 model_to_use = (
-                    settings.gemini_pro_model if attempt < 3 else settings.gemini_flash_model
+                    settings.gemini_pro_model if attempt == 1 else settings.gemini_flash_model
                 )
                 response = await asyncio.to_thread(
                     client.models.generate_content,
@@ -174,14 +174,25 @@ async def generate_caption(
 
             except Exception as exc:
                 last_error = exc
+                err_str = str(exc)
+                is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+
+                # Determine backoff delay: check if API specified retry delay, else default to 6s+
+                delay = attempt * 2.5
+                match = re.search(r"retry in (\d+(?:\.\d+)?)s", err_str, re.IGNORECASE)
+                if match:
+                    delay = float(match.group(1)) + 1.5
+                elif is_rate_limit:
+                    delay = max(delay, 6.0 * attempt)
+
                 logger.warning(
-                    "Caption generation attempt %d failed (%s); retrying in %ss...",
+                    "Caption generation attempt %d failed (%s); retrying in %.1fs...",
                     attempt,
                     exc,
-                    attempt * 1.5,
+                    delay,
                 )
-                if attempt < 3:
-                    await asyncio.sleep(attempt * 1.5)
+                if attempt < 4:
+                    await asyncio.sleep(delay)
 
         if last_error:
             logger.warning("All caption generation attempts failed (%s); using fallback.", last_error)

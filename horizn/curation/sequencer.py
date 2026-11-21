@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import logging
+import re
 
 from google import genai
 from google.genai import types
@@ -96,28 +97,52 @@ async def sequence_slides(photos: list[dict]) -> list[dict]:
                     types.Part.from_bytes(data=placeholder.getvalue(), mime_type="image/jpeg")
                 )
 
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=settings.gemini_flash_model,
-            contents=[types.Content(role="user", parts=parts)],
-        )
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=settings.gemini_flash_model,
+                    contents=[types.Content(role="user", parts=parts)],
+                )
 
-        raw = response.text.strip()
-        # Strip optional markdown code fences
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        data = json.loads(raw)
+                raw = response.text.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                data = json.loads(raw)
 
-        order: list[int] = data["order"]
-        # Validate: must be a permutation of 0 … n-1
-        n = len(photos)
-        if sorted(order) != list(range(n)):
-            raise ValueError(f"Invalid order permutation: {order}")
+                order: list[int] = data["order"]
+                n = len(photos)
+                if sorted(order) != list(range(n)):
+                    raise ValueError(f"Invalid order permutation: {order}")
 
-        return [photos[i] for i in order]
+                return [photos[i] for i in order]
+
+            except Exception as exc:
+                last_error = exc
+                err_str = str(exc)
+                is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                delay = attempt * 2.0
+                match = re.search(r"retry in (\d+(?:\.\d+)?)s", err_str, re.IGNORECASE)
+                if match:
+                    delay = float(match.group(1)) + 1.0
+                elif is_rate_limit:
+                    delay = max(delay, 5.0 * attempt)
+
+                logger.warning(
+                    "Gemini sequencing attempt %d failed (%s); retrying in %.1fs...",
+                    attempt,
+                    exc,
+                    delay,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(delay)
+
+        logger.warning("Gemini sequencing failed (%s); keeping original order.", last_error)
+        return photos
 
     except Exception as exc:
-        logger.warning("Gemini sequencing failed (%s); keeping original order.", exc)
+        logger.warning("Gemini sequencing setup failed (%s); keeping original order.", exc)
         return photos

@@ -20,7 +20,7 @@ from horizn.config import settings
 logger = logging.getLogger(__name__)
 
 _MAX_THUMB_PX = 128
-_MAX_BATCH_SIZE = 16
+_MAX_BATCH_SIZE = 80
 
 
 # ---------------------------------------------------------------------------
@@ -135,17 +135,18 @@ async def _cluster_batch_with_gemini(subgroup: list[dict], max_slides: int) -> l
         n = len(subgroup)
 
         prompt_text = (
-            f"You are a professional Instagram travel and landscape curator.\n"
-            f"Analyze these {n} photos (indexed 0 to {n-1}) from a travel session.\n\n"
-            "Identify distinct visual themes and subjects (e.g. river/boats, temples/architecture, "
-            "street scenes, night/ceremony, food/details).\n"
-            "Group photos that share a cohesive visual theme into organic Instagram carousels.\n\n"
-            "Rules:\n"
-            f"- Each carousel should have between 2 and {max_slides} photos (typically 3 to 7 photos).\n"
-            f"- Each index 0..{n-1} should be in at most one carousel.\n"
-            "- CRITICAL DIVERSITY RULE: Within any single carousel, each photo MUST showcase a distinct viewpoint, composition, or subject. Never group two near-identical views of the exact same subject together.\n"
-            "- Return ONLY valid JSON (no markdown fences) with format:\n"
-            '{"carousels": [{"theme": "<theme description>", "indices": [0, 2, ...]}, ...]}'
+            f"You are a master social media photo editor curating an Instagram travel series.\n"
+            f"You are given {n} unique hero photos from a travel trip, indexed 0 to {n-1}.\n\n"
+            "Your goal is to organize these photos into DISTINCT, NON-REDUNDANT Instagram carousels.\n\n"
+            "CRITICAL CURATION RULES:\n"
+            "1. NO DUPLICATE THEMES: Do NOT create multiple carousels with the same visual theme or location. "
+            "For example, combine all evening river/aarti photos into at most ONE single stunning night carousel, "
+            "rather than splitting them across multiple repetitive carousels.\n"
+            f"2. HIGH STORYTELLING QUALITY: Each carousel should have between 4 and {max_slides} photos (typically 5 to 10 photos) that tell a cohesive visual story.\n"
+            "3. VISUAL DIVERSITY: Within each carousel, select photos that showcase different perspectives, angles, framing, or subjects. Never put near-identical angles together.\n"
+            f"4. Each photo index 0..{n-1} can be used in AT MOST ONE carousel.\n\n"
+            "Return ONLY valid JSON (no markdown fences) in this exact format:\n"
+            '{"carousels": [{"theme": "<Distinct Theme Description>", "indices": [0, 4, 12, ...]}, ...]}'
         )
 
         parts: list[types.Part] = [types.Part.from_text(text=prompt_text)]
@@ -191,9 +192,11 @@ async def _cluster_batch_with_gemini(subgroup: list[dict], max_slides: int) -> l
                 ai_clusters.extend(_split_oversized(cluster_photos, max_slides))
                 assigned_indices.update(valid_indices)
 
-        # Catch unassigned photos
+        # Only group unassigned photos if they form a viable group (>= 4 photos),
+        # otherwise leave them in the library for manual user curation rather than
+        # forcing miscellaneous leftover photos into low-coherence drafts.
         unassigned = [subgroup[i] for i in range(n) if i not in assigned_indices]
-        if unassigned:
+        if len(unassigned) >= 4:
             ai_clusters.extend(_split_oversized(unassigned, max_slides))
 
         return ai_clusters

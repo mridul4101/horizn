@@ -165,6 +165,9 @@ async def run_curation(job_id: str) -> None:
                 carousels_created += 1
                 _curation_jobs[job_id]["carousels_created"] = carousels_created
 
+                # Pacing delay between carousels to stay safely within Gemini Free Tier (15 RPM)
+                await asyncio.sleep(4.0)
+
             _curation_jobs[job_id]["status"] = "completed"
             logger.info("Curation job %s completed. Created %d carousels.", job_id, carousels_created)
 

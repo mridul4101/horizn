@@ -180,11 +180,23 @@ async def get_ingest_stats() -> dict:
             """
             SELECT COUNT(*) as uncurated FROM photos p
             LEFT JOIN carousel_slides cs ON p.id = cs.photo_id
-            WHERE p.is_landscape = 1 AND cs.photo_id IS NULL AND p.export_path IS NOT NULL
+            WHERE p.is_landscape = 1 
+              AND cs.photo_id IS NULL 
+              AND p.export_path IS NOT NULL
+              AND p.duplicate_of IS NULL
             """
         ) as cur:
             row = await cur.fetchone()
             uncurated_photos = row["uncurated"] if row else 0
+
+        async with conn.execute(
+            """
+            SELECT COUNT(*) as alternates FROM photos p
+            WHERE p.duplicate_of IS NOT NULL
+            """
+        ) as cur:
+            row = await cur.fetchone()
+            alternate_photos = row["alternates"] if row else 0
 
         async with conn.execute("SELECT COUNT(*) as total FROM carousels WHERE status = 'draft'") as cur:
             row = await cur.fetchone()
@@ -193,5 +205,6 @@ async def get_ingest_stats() -> dict:
     return {
         "total_photos": total_photos,
         "uncurated_photos": uncurated_photos,
+        "alternate_photos": alternate_photos,
         "draft_carousels": draft_carousels,
     }
