@@ -19,6 +19,7 @@ import {
 import CarouselMockup, { SlideItem } from '../components/CarouselMockup'
 import SlideCard from '../components/SlideCard'
 import PublishButton from '../components/PublishButton'
+import AICaptionAssistant from '../components/AICaptionAssistant'
 
 export default function Editor() {
   const { id } = useParams<{ id: string }>()
@@ -204,6 +205,23 @@ export default function Editor() {
 
           <div className="panel-box">
             <h2 className="section-title">Caption & Copy</h2>
+
+            {id && (
+              <AICaptionAssistant
+                carouselId={id}
+                currentCaption={caption}
+                currentHashtags={hashtags}
+                onApply={(newCaption, newHashtags) => {
+                  setCaption(newCaption)
+                  if (newHashtags && newHashtags.length > 0) {
+                    setHashtags(newHashtags)
+                  }
+                  setFeedback('✨ AI caption applied! Remember to save changes.')
+                  setTimeout(() => setFeedback(null), 4000)
+                }}
+              />
+            )}
+
             <textarea
               className="caption-textarea"
               rows={4}

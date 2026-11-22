@@ -583,3 +583,57 @@ async def delete_carousel(carousel_id: str) -> dict:
         await conn.commit()
 
     return {"status": "deleted", "id": carousel_id}
+
+
+class AICaptionRequest(BaseModel):
+    instruction: Optional[str] = Field(default=None, description="Optional user prompt or creative guidance")
+    mode: str = Field(default="refine", description="'refine' to modify existing caption, or 'scratch' to generate fresh")
+    current_caption: Optional[str] = Field(default=None, description="Current caption in the editor")
+
+
+class AICaptionResponse(BaseModel):
+    caption: str
+    hashtags: List[str]
+
+
+@router.post("/{carousel_id}/ai-caption", response_model=AICaptionResponse)
+async def generate_ai_caption(carousel_id: str, body: AICaptionRequest) -> AICaptionResponse:
+    """Generate or refine caption and hashtags for a carousel using Gemini AI."""
+    async with get_db() as conn:
+        async with conn.execute(
+            "SELECT id, caption, hashtags FROM carousels WHERE id = ?", (carousel_id,)
+        ) as cursor:
+            carousel_row = await cursor.fetchone()
+            if not carousel_row:
+                raise HTTPException(status_code=404, detail="Carousel not found")
+
+        async with conn.execute(
+            """
+            SELECT cs.position, cs.photo_id, p.export_path, p.lat, p.lon, p.taken_at
+            FROM carousel_slides cs
+            JOIN photos p ON cs.photo_id = p.id
+            WHERE cs.carousel_id = ?
+            ORDER BY cs.position ASC
+            """,
+            (carousel_id,),
+        ) as cursor:
+            slide_rows = await cursor.fetchall()
+            photos = [dict(r) for r in slide_rows]
+
+    location_hint = None
+    for p in photos:
+        if p.get("lat") and p.get("lon"):
+            location_hint = f"GPS: {p['lat']:.4f}, {p['lon']:.4f}"
+            break
+
+    curr_cap = body.current_caption if body.current_caption is not None else carousel_row["caption"]
+
+    caption, hashtags = await caption_gen.refine_or_generate_caption(
+        photos=photos,
+        current_caption=curr_cap,
+        instruction=body.instruction,
+        location_hint=location_hint,
+        mode=body.mode,
+    )
+
+    return AICaptionResponse(caption=caption, hashtags=hashtags)
